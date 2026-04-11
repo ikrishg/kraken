@@ -1,20 +1,23 @@
-import Link from "next/link";
-import {
-  ArticleCard,
-  EditorialGrid,
-  IssueLikeControl,
-  Masthead,
-} from "@/components/editorial";
+import { Masthead } from "@/components/editorial";
+import { FeedTabs } from "@/components/feed/FeedTabs";
 import { useOnboarded } from "@/hooks/onboarded";
-import { getFeedUpdatesForUser } from "@/lib/queries/updates";
-import { assignCardSizes, getCardGridClasses } from "@/lib/utils/card-layout";
+import {
+  getFeedUpdatesForUser,
+  getFollowsForUser,
+  getLikedIssuesForUser,
+  getSubscriptionsForUser,
+} from "@/lib/queries/updates";
 
 export const dynamic = "force-dynamic";
 
 export default async function FeedPage() {
   const session = await useOnboarded();
-  const articles = await getFeedUpdatesForUser(session.user.id, 12);
-  const cardSizes = assignCardSizes(articles.length);
+  const [articles, follows, subscriptions, likedArticles] = await Promise.all([
+    getFeedUpdatesForUser(session.user.id, 12),
+    getFollowsForUser(session.user.id),
+    getSubscriptionsForUser(session.user.id, session.user.email),
+    getLikedIssuesForUser(session.user.id, 12),
+  ]);
 
   return (
     <main className="min-h-screen bg-paper-base">
@@ -31,52 +34,12 @@ export default async function FeedPage() {
           />
         </div>
 
-        {articles.length > 0 ? (
-          <EditorialGrid>
-            {articles.map((article, index) => {
-              const size = cardSizes[index];
-              const gridClasses = getCardGridClasses(size);
-              return (
-                <div key={article.id} className={`${gridClasses} group h-full`}>
-                  <ArticleCard
-                    article={article}
-                    href={`/~${article.userUsername}/${article.editionNumber}`}
-                    size={size}
-                    socialSlot={
-                      <div className="flex items-center justify-between gap-3">
-                        <Link
-                          href={`/~${article.userUsername}`}
-                          className="text-xs text-paper-muted underline-offset-2 hover:underline"
-                        >
-                          ~{article.userUsername}
-                        </Link>
-                        <IssueLikeControl
-                          issueId={article.id}
-                          publicationUsername={
-                            article.userUsername || "unknown"
-                          }
-                          editionNumber={article.editionNumber}
-                          likeCount={article.likeCount}
-                          viewerHasLiked={article.viewerHasLiked}
-                          isAuthenticated
-                          returnTo="/feed"
-                          compact
-                        />
-                      </div>
-                    }
-                  />
-                </div>
-              );
-            })}
-          </EditorialGrid>
-        ) : (
-          <div className="text-center py-16 px-6">
-            <p className="text-body-editorial text-paper-muted">
-              Your feed is empty. Subscribe to writers and they will appear here
-              automatically.
-            </p>
-          </div>
-        )}
+        <FeedTabs
+          articles={articles}
+          follows={follows}
+          subscriptions={subscriptions}
+          likedArticles={likedArticles}
+        />
       </div>
     </main>
   );
