@@ -1,4 +1,7 @@
+import { Redis } from "@upstash/redis";
 import { type NextRequest, NextResponse } from "next/server";
+
+const DOMAIN_CACHE_TTL_SECONDS = 300;
 
 function normalizeHostname(value: string): string {
   return value.trim().toLowerCase().replace(/\.$/, "").split(":")[0] || "";
@@ -38,6 +41,71 @@ function isPrimaryHost(hostname: string): boolean {
   }
 }
 
+function getRedis(): Redis | null {
+  const url = process.env.UPSTASH_REDIS_REST_URL;
+  const token = process.env.UPSTASH_REDIS_REST_TOKEN;
+
+  if (!url || !token) {
+    return null;
+  }
+
+  return new Redis({ url, token });
+}
+
+async function lookupDomainUsername(
+  domain: string,
+  requestUrl: string,
+): Promise<string | null> {
+  const redis = getRedis();
+  const cacheKey = `domain:${domain}`;
+
+  if (redis) {
+    try {
+      const cached = await redis.get<string>(cacheKey);
+      if (cached !== null) {
+        return cached === "" ? null : cached;
+      }
+    } catch {
+      // Cache unavailable, proceed with API lookup
+    }
+  }
+
+  const lookupUrl = new URL(
+    `/api/internal/domain-lookup?domain=${encodeURIComponent(domain)}`,
+    requestUrl,
+  );
+
+  const lookup = await fetch(lookupUrl, {
+    headers: { "x-kraken-proxy": "1" },
+  });
+
+  if (!lookup.ok) {
+    if (redis) {
+      try {
+        await redis.set(cacheKey, "", { ex: DOMAIN_CACHE_TTL_SECONDS });
+      } catch {
+        // Ignore cache write failure
+      }
+    }
+    return null;
+  }
+
+  const payload = (await lookup.json()) as { username?: string };
+  const username = payload.username ? payload.username.toLowerCase() : null;
+
+  if (redis) {
+    try {
+      await redis.set(cacheKey, username ?? "", {
+        ex: DOMAIN_CACHE_TTL_SECONDS,
+      });
+    } catch {
+      // Ignore cache write failure
+    }
+  }
+
+  return username;
+}
+
 export async function proxy(request: NextRequest) {
   const forwardedHost = request.headers.get("x-forwarded-host");
   const hostHeader = request.headers.get("host");
@@ -49,27 +117,12 @@ export async function proxy(request: NextRequest) {
   }
 
   const search = request.nextUrl.search;
-  const lookupUrl = new URL(
-    `/api/internal/domain-lookup?domain=${encodeURIComponent(hostname)}`,
-    request.url,
-  );
+  const ownerUsername = await lookupDomainUsername(hostname, request.url);
 
-  const lookup = await fetch(lookupUrl, {
-    headers: {
-      "x-kraken-proxy": "1",
-    },
-  });
-
-  if (!lookup.ok) {
+  if (!ownerUsername) {
     return NextResponse.next();
   }
 
-  const payload = (await lookup.json()) as { username?: string };
-  if (!payload.username) {
-    return NextResponse.next();
-  }
-
-  const ownerUsername = payload.username.toLowerCase();
   const handleUsername = getHandleUsername(pathname);
 
   if (handleUsername) {
@@ -81,7 +134,7 @@ export async function proxy(request: NextRequest) {
   }
 
   const rewriteUrl = new URL(
-    `/~${payload.username}${pathname}${search}`,
+    `/~${ownerUsername}${pathname}${search}`,
     request.url,
   );
 

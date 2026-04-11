@@ -1,6 +1,13 @@
-import { and, count, desc, eq, inArray, isNull } from "drizzle-orm";
+import { and, count, desc, eq, inArray, isNull, or } from "drizzle-orm";
 import type { Article, IssueSocialState } from "@/components/editorial";
-import { follows, issues, likes, publications, user } from "@/db/schema";
+import {
+  follows,
+  issues,
+  likes,
+  publications,
+  subscribers,
+  user,
+} from "@/db/schema";
 import { db } from "@/lib/db";
 import { calculateReadTime } from "../utils/text";
 
@@ -275,4 +282,127 @@ export async function getUserPublications(userId: string) {
     .select()
     .from(publications)
     .where(eq(publications.userId, userId));
+}
+
+export type FollowEntry = {
+  userId: string;
+  username: string;
+  name: string;
+  image: string | null;
+  publicationName: string | null;
+  followedAt: Date;
+};
+
+export type SubscriptionEntry = {
+  id: string;
+  publicationName: string;
+  publicationUsername: string;
+  emailNotificationsEnabled: boolean | null;
+  createdAt: Date;
+};
+
+/**
+ * Get users that the viewer is following
+ */
+export async function getFollowsForUser(
+  viewerUserId: string,
+): Promise<FollowEntry[]> {
+  const results = await db
+    .select({
+      userId: user.id,
+      username: user.username,
+      name: user.name,
+      image: user.image,
+      publicationName: publications.name,
+      followedAt: follows.createdAt,
+    })
+    .from(follows)
+    .innerJoin(user, eq(follows.followingId, user.id))
+    .leftJoin(publications, eq(publications.userId, user.id))
+    .where(eq(follows.followerId, viewerUserId))
+    .orderBy(desc(follows.createdAt));
+
+  return results.map((row) => ({
+    userId: row.userId,
+    username: row.username ?? "",
+    name: row.name,
+    image: row.image,
+    publicationName: row.publicationName,
+    followedAt: row.followedAt,
+  }));
+}
+
+/**
+ * Get email subscriptions for the viewer
+ */
+export async function getSubscriptionsForUser(
+  viewerUserId: string,
+  viewerEmail: string,
+): Promise<SubscriptionEntry[]> {
+  const results = await db
+    .select({
+      id: subscribers.id,
+      publicationName: publications.name,
+      publicationUsername: user.username,
+      emailNotificationsEnabled: subscribers.emailNotificationsEnabled,
+      createdAt: subscribers.createdAt,
+    })
+    .from(subscribers)
+    .innerJoin(publications, eq(subscribers.publicationId, publications.id))
+    .innerJoin(user, eq(publications.userId, user.id))
+    .where(
+      or(
+        eq(subscribers.userId, viewerUserId),
+        eq(subscribers.email, viewerEmail),
+      ),
+    )
+    .orderBy(desc(subscribers.createdAt));
+
+  return results.map((row) => ({
+    id: row.id,
+    publicationName: row.publicationName,
+    publicationUsername: row.publicationUsername ?? "",
+    emailNotificationsEnabled: row.emailNotificationsEnabled,
+    createdAt: row.createdAt,
+  }));
+}
+
+/**
+ * Get issues liked by the viewer
+ */
+export async function getLikedIssuesForUser(
+  viewerUserId: string,
+  limit = 12,
+): Promise<Article[]> {
+  const results = await db
+    .select({
+      id: issues.id,
+      title: issues.title,
+      content: issues.content,
+      editionNumber: issues.editionNumber,
+      publishedAt: issues.publishedAt,
+      publicationName: publications.name,
+      userId: issues.userId,
+      userUsername: user.username,
+    })
+    .from(likes)
+    .innerJoin(issues, eq(likes.issueId, issues.id))
+    .leftJoin(publications, eq(issues.publicationId, publications.id))
+    .leftJoin(user, eq(issues.userId, user.id))
+    .where(
+      and(
+        eq(likes.userId, viewerUserId),
+        eq(issues.status, "published"),
+        isNull(issues.deletedAt),
+      ),
+    )
+    .orderBy(desc(likes.createdAt))
+    .limit(limit);
+
+  const socialState = await getIssueSocialState(
+    results.map((row) => row.id),
+    viewerUserId,
+  );
+
+  return results.map((row) => mapArticleRow(row, socialState.get(row.id)));
 }
