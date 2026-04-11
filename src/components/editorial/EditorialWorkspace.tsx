@@ -16,6 +16,7 @@ import {
   formatEditorialDate,
   toDateOnlyInputValue,
 } from "@/lib/utils/publish-date";
+import { editorialUrl, issueUrl } from "@/lib/utils/routes";
 
 type EditorialWorkspaceProps = {
   username: string;
@@ -120,7 +121,7 @@ export function EditorialWorkspace({
         setIssues((prev) => [created, ...prev]);
         selectIssue(created);
         setNotice("New draft created.");
-        router.push(`/editorial/${created.id}`);
+        router.push(editorialUrl(created.id));
       } catch {
         setNotice("Could not create draft.");
       }
@@ -236,7 +237,7 @@ export function EditorialWorkspace({
             draftIssues.map((issue) => (
               <Link
                 key={issue.id}
-                href={`/editorial/${issue.id}`}
+                href={editorialUrl(issue.id)}
                 className={`block w-full border px-3 py-2 text-left transition ${
                   issue.id === activeIssueId
                     ? "border-paper-ink bg-paper-border/50"
@@ -262,7 +263,7 @@ export function EditorialWorkspace({
             publishedIssues.map((issue) => (
               <Link
                 key={issue.id}
-                href={`/editorial/${issue.id}`}
+                href={editorialUrl(issue.id)}
                 className={`block w-full border px-3 py-2 text-left transition ${
                   issue.id === activeIssueId
                     ? "border-paper-ink bg-paper-border/50"
@@ -388,7 +389,7 @@ export function EditorialWorkspace({
 
               {activeIssue.status === "published" ? (
                 <Link
-                  href={`/~${username}/${activeIssue.editionNumber}`}
+                  href={issueUrl(username, activeIssue.editionNumber)}
                   className="text-sm underline underline-offset-2"
                 >
                   View published page

@@ -11,6 +11,7 @@ import { useAuthenticated } from "@/hooks/authenticated";
 import { getSession } from "@/hooks/session";
 import { db } from "@/lib/db";
 import { getAppUrl, getFromEmail, getResendClient } from "@/lib/resend";
+import { publicationUrl } from "@/lib/utils/routes";
 import {
   doesSessionOwnSubscriber,
   isValidEmail,
@@ -238,7 +239,7 @@ export async function subscribeToPublication(formData: FormData) {
   revalidatePath("/subscriptions");
   revalidatePath("/");
   revalidatePath("/feed");
-  revalidatePath(`/~${publicationUsername}`);
+  revalidatePath(publicationUrl(publicationUsername));
 
   redirectWithStatus(
     returnTo,
@@ -281,7 +282,7 @@ export async function followPublication(formData: FormData) {
 
   revalidatePath("/feed");
   revalidatePath("/subscriptions");
-  revalidatePath(`/~${publicationUsername}`);
+  revalidatePath(publicationUrl(publicationUsername));
   redirectWithStatus(returnTo, "followed");
 }
 
@@ -316,7 +317,7 @@ export async function unfollowPublication(formData: FormData) {
 
   revalidatePath("/feed");
   revalidatePath("/subscriptions");
-  revalidatePath(`/~${publicationUsername}`);
+  revalidatePath(publicationUrl(publicationUsername));
   redirectWithStatus(returnTo, "unfollowed");
 }
 

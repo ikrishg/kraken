@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { publications } from "@/db/schema";
 import { useOnboarded } from "@/hooks/onboarded";
 import { db } from "@/lib/db";
+import { publicationUrl } from "@/lib/utils/routes";
 import { verifyProjectDomain } from "@/lib/vercel-domains";
 
 export const dynamic = "force-dynamic";
@@ -329,7 +330,7 @@ export default async function SettingsPage({ searchParams }: PageProps) {
             <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
               <span className="text-paper-muted">Public publication</span>
               <Link
-                href={`/~${session.user.username}`}
+                href={publicationUrl(session.user.username ?? "")}
                 className="underline underline-offset-4"
               >
                 /~{session.user.username}

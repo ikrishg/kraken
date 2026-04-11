@@ -1,4 +1,5 @@
 import { and, eq } from "drizzle-orm";
+import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { PublicationIssueView } from "@/components/editorial/PublicationIssueView";
 import { follows, publications, user } from "@/db/schema";
@@ -20,6 +21,55 @@ function parsePublicationHandle(rawHandle: string): string | null {
   }
 
   return rawHandle.slice(1);
+}
+
+export async function generateMetadata({
+  params,
+}: PageProps): Promise<Metadata> {
+  const { handle, editionNumber } = await params;
+  const username = parsePublicationHandle(handle);
+
+  if (!username) {
+    return {};
+  }
+
+  const parsedEditionNumber = Number.parseInt(editionNumber, 10);
+  if (Number.isNaN(parsedEditionNumber) || parsedEditionNumber < 1) {
+    return {};
+  }
+
+  const issue = await getIssueByEditionNumber(username, parsedEditionNumber);
+
+  if (!issue) {
+    return {};
+  }
+
+  const title = issue.headline || `Edition #${parsedEditionNumber}`;
+  const publicationName = issue.publicationName;
+  const appUrl =
+    process.env.NEXT_PUBLIC_APP_URL || process.env.BETTER_AUTH_URL || "";
+  const canonical = appUrl
+    ? `${appUrl}/~${username}/${parsedEditionNumber}`
+    : undefined;
+
+  return {
+    title: `${title} — ${publicationName} on Kraken`,
+    description: issue.content
+      .slice(0, 160)
+      .replace(/[#*`[\]]/g, "")
+      .trim(),
+    alternates: canonical ? { canonical } : undefined,
+    openGraph: {
+      title: `${title} — ${publicationName}`,
+      description: issue.content
+        .slice(0, 160)
+        .replace(/[#*`[\]]/g, "")
+        .trim(),
+      url: canonical,
+      type: "article",
+      publishedTime: issue.publishedAt?.toISOString(),
+    },
+  };
 }
 
 export default async function PublicationIssuePage({

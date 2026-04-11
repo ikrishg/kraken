@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
+import { publicationUrl } from "@/lib/utils/routes";
 
 type SessionLike = {
   user?: {
@@ -14,7 +15,7 @@ interface KrakenLandingPageProps {
 export function KrakenLandingPage({ session = null }: KrakenLandingPageProps) {
   const isSignedIn = Boolean(session);
   const publicationHref = session?.user?.username
-    ? `/~${session.user.username}`
+    ? publicationUrl(session.user.username)
     : "/auth/sign-up";
 
   return (

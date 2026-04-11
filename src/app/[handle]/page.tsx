@@ -1,4 +1,5 @@
 import { and, eq } from "drizzle-orm";
+import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import type { Article } from "@/components/editorial";
@@ -15,6 +16,7 @@ import { db } from "@/lib/db";
 import { isViewerSubscribedToPublication } from "@/lib/queries/subscriptions";
 import { getIssuesByUsername } from "@/lib/queries/updates";
 import { assignCardSizes, getCardGridClasses } from "@/lib/utils/card-layout";
+import { issueUrl, publicationUrl } from "@/lib/utils/routes";
 
 export const dynamic = "force-dynamic";
 
@@ -41,6 +43,47 @@ function parsePublicationHandle(
   return null;
 }
 
+export async function generateMetadata({
+  params,
+}: PageProps): Promise<Metadata> {
+  const { handle } = await params;
+  const parsed = parsePublicationHandle(handle);
+
+  if (!parsed || parsed.isLegacyProfileRoute) {
+    return {};
+  }
+
+  const username = parsed.username;
+
+  const record = await db
+    .select({ publicationName: publications.name, userName: user.name })
+    .from(user)
+    .leftJoin(publications, eq(publications.userId, user.id))
+    .where(eq(user.username, username))
+    .then((rows) => rows[0]);
+
+  if (!record) {
+    return {};
+  }
+
+  const title = record.publicationName || record.userName || `~${username}`;
+  const appUrl =
+    process.env.NEXT_PUBLIC_APP_URL || process.env.BETTER_AUTH_URL || "";
+  const canonical = appUrl ? `${appUrl}/~${username}` : undefined;
+
+  return {
+    title: `${title} — Kraken`,
+    description: `Read updates and published issues from ${title} on Kraken.`,
+    alternates: canonical ? { canonical } : undefined,
+    openGraph: {
+      title: `${title} — Kraken`,
+      description: `Read updates and published issues from ${title} on Kraken.`,
+      url: canonical,
+      type: "website",
+    },
+  };
+}
+
 export default async function PublicHandlePage({
   params,
   searchParams,
@@ -53,7 +96,7 @@ export default async function PublicHandlePage({
   }
 
   if (parsed.isLegacyProfileRoute) {
-    redirect(`/~${parsed.username}`);
+    redirect(publicationUrl(parsed.username));
   }
 
   const publicationUsername = parsed.username;
@@ -154,7 +197,7 @@ export default async function PublicHandlePage({
             userUsername={session?.user?.username}
             showAvatar={!!session}
             title={publicationTitle}
-            linkTo={`/~${publicationUsername}`}
+            linkTo={publicationUrl(publicationUsername)}
             className="mb-8"
           />
         </div>
@@ -167,7 +210,7 @@ export default async function PublicHandlePage({
             isOwnPublication={isOwnPublication}
             isSubscribed={isSubscribed}
             isFollowing={isFollowing}
-            returnTo={`/~${publicationUsername}`}
+            returnTo={publicationUrl(publicationUsername)}
             status={subscribe}
           />
         </div>
@@ -181,12 +224,15 @@ export default async function PublicHandlePage({
                 <div key={article.id} className={`${gridClasses} group h-full`}>
                   <ArticleCard
                     article={article}
-                    href={`/~${publicationUsername}/${article.editionNumber}`}
+                    href={issueUrl(publicationUsername, article.editionNumber)}
                     size={size}
                     socialSlot={
                       <div className="flex items-center justify-between gap-3">
                         <Link
-                          href={`/~${publicationUsername}/${article.editionNumber}`}
+                          href={issueUrl(
+                            publicationUsername,
+                            article.editionNumber,
+                          )}
                           className="text-xs text-paper-muted underline-offset-2 hover:underline"
                         >
                           Read edition
@@ -198,7 +244,7 @@ export default async function PublicHandlePage({
                           likeCount={article.likeCount}
                           viewerHasLiked={article.viewerHasLiked}
                           isAuthenticated={Boolean(session)}
-                          returnTo={`/~${publicationUsername}`}
+                          returnTo={publicationUrl(publicationUsername)}
                           compact
                         />
                       </div>

@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { issues, likes } from "@/db/schema";
 import { useAuthenticated } from "@/hooks/authenticated";
 import { db } from "@/lib/db";
+import { issueUrl, publicationUrl } from "@/lib/utils/routes";
 import { normalizeReturnTo } from "@/lib/utils/subscription";
 
 async function ensurePublishedIssue(issueId: string) {
@@ -37,8 +38,8 @@ function revalidateLikePaths(input: {
 }) {
   revalidatePath(input.returnTo);
   revalidatePath("/feed");
-  revalidatePath(`/~${input.publicationUsername}`);
-  revalidatePath(`/~${input.publicationUsername}/${input.editionNumber}`);
+  revalidatePath(publicationUrl(input.publicationUsername));
+  revalidatePath(issueUrl(input.publicationUsername, input.editionNumber));
   revalidatePath("/subscriptions");
 }
 

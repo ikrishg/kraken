@@ -42,13 +42,14 @@ Open `http://localhost:3000` to view the app.
 ## Main Routes
 
 - `/` is the landing page; signed-in users are redirected to `/feed` (use `/home` to view the landing page while signed in).
-- `/feed` is the reader feed of recent published issues.
-- `/editorial` is the writer workspace. Article editing currently happens in this UI; the `/editorial/[id]` route described in `AGENTS.md` is not built yet.
+- `/feed` is the tabbed reader feed: Articles, Subscriptions, Follows, and Likes.
+- `/editorial` is the writer workspace (no active issue pre-selected).
+- `/editorial/[id]` opens the writer workspace focused on a specific issue.
 - `/settings` manages profile, publication title, and custom domains.
 - `/subscriptions` manages reader subscriptions.
 - `/auth/*` covers sign-in, sign-up, email auth, verify-email, onboarding, and auth state pages.
-- `/@username` is the profile-style public view.
-- `/~username` is the publication-style view with subscription controls.
+- `/@username` redirects to `/~username` (compact profile alias).
+- `/~username` is the publication-style view with subscription controls (canonical).
 - `/~username/[editionNumber]` is the publication-style issue view.
 
 For a compact route map and notes on the public/domain routing split, see [docs/routes.md](docs/routes.md).
@@ -82,6 +83,8 @@ The code currently expects some combination of the following values. `GOOGLE_CLI
 - `VERCEL_API_TOKEN`
 - `VERCEL_PROJECT_ID`
 - `VERCEL_TEAM_ID`
+- `UPSTASH_REDIS_REST_URL` *(optional — enables proxy domain-lookup caching)*
+- `UPSTASH_REDIS_REST_TOKEN` *(optional — required when `UPSTASH_REDIS_REST_URL` is set)*
 - `TEST_EMAIL_TO`
 
 Email sending is skipped when `RESEND_API_KEY` is missing. Custom-domain actions need all three `VERCEL_*` values and fail without them. Check the implementation before changing those behaviors.
