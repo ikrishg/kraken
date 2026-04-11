@@ -6,6 +6,7 @@ import { redirect, unstable_rethrow } from "next/navigation";
 import { publications, user } from "@/db/schema";
 import { useOnboarded } from "@/hooks/onboarded";
 import { db } from "@/lib/db";
+<<<<<<< HEAD
 import { isUniqueViolation } from "@/lib/db-errors";
 import { executeCustomDomainAdd } from "@/lib/settings/custom-domain-add";
 import {
@@ -15,6 +16,11 @@ import {
 import { removeCustomDomainIfOwned } from "@/lib/settings/custom-domain-security";
 import { canVerifyStoredDomain } from "@/lib/settings/custom-domain-verify";
 import { parseCustomDomainInput } from "@/lib/utils/domain";
+=======
+import { getRedisClient } from "@/lib/redis";
+import { normalizeDomain } from "@/lib/utils/domain";
+import { publicationUrl } from "@/lib/utils/routes";
+>>>>>>> 9c1cfcf (feat: routes utility, page metadata, docs refresh, and route tests)
 import {
   addProjectDomain,
   removeProjectDomain,
@@ -112,7 +118,9 @@ export async function updateDisplayName(formData: FormData) {
     .where(eq(user.id, session.user.id));
 
   revalidatePath("/settings");
-  revalidatePath(`/~${session.user.username}`);
+  if (session.user.username) {
+    revalidatePath(publicationUrl(session.user.username));
+  }
   toSettingsRedirect("name-updated");
 }
 
@@ -136,7 +144,9 @@ export async function updatePublicationTitle(formData: FormData) {
     .where(eq(publications.id, publication.id));
 
   revalidatePath("/settings");
-  revalidatePath(`/~${session.user.username}`);
+  if (session.user.username) {
+    revalidatePath(publicationUrl(session.user.username));
+  }
   toSettingsRedirect("publication-title-updated");
 }
 

@@ -11,6 +11,7 @@ import {
 } from "@/components/editorial";
 import type { FollowEntry, SubscriptionEntry } from "@/lib/queries/updates";
 import { assignCardSizes, getCardGridClasses } from "@/lib/utils/card-layout";
+import { issueUrl, publicationUrl } from "@/lib/utils/routes";
 
 type FeedTab = "articles" | "subscriptions" | "follows" | "likes";
 
@@ -88,12 +89,15 @@ function ArticlesTab({ articles }: { articles: Article[] }) {
           <div key={article.id} className={`${gridClasses} group h-full`}>
             <ArticleCard
               article={article}
-              href={`/~${article.userUsername}/${article.editionNumber}`}
+              href={issueUrl(
+                article.userUsername || "unknown",
+                article.editionNumber,
+              )}
               size={size}
               socialSlot={
                 <div className="flex items-center justify-between gap-3">
                   <Link
-                    href={`/~${article.userUsername}`}
+                    href={publicationUrl(article.userUsername || "unknown")}
                     className="text-xs text-paper-muted underline-offset-2 hover:underline"
                   >
                     ~{article.userUsername}
@@ -148,7 +152,7 @@ function SubscriptionsTab({
         >
           <div>
             <Link
-              href={`/~${sub.publicationUsername}`}
+              href={publicationUrl(sub.publicationUsername)}
               className="font-family-display text-xl leading-tight text-paper-ink hover:underline underline-offset-4"
             >
               {sub.publicationName}
@@ -207,7 +211,7 @@ function FollowsTab({ follows }: { follows: FollowEntry[] }) {
           )}
           <div className="flex-1 min-w-0">
             <Link
-              href={`/~${follow.username}`}
+              href={publicationUrl(follow.username)}
               className="font-family-display text-xl leading-tight text-paper-ink hover:underline underline-offset-4"
             >
               {follow.publicationName || follow.name}
@@ -242,12 +246,15 @@ function LikesTab({ articles }: { articles: Article[] }) {
           <div key={article.id} className={`${gridClasses} group h-full`}>
             <ArticleCard
               article={article}
-              href={`/~${article.userUsername}/${article.editionNumber}`}
+              href={issueUrl(
+                article.userUsername || "unknown",
+                article.editionNumber,
+              )}
               size={size}
               socialSlot={
                 <div className="flex items-center justify-between gap-3">
                   <Link
-                    href={`/~${article.userUsername}`}
+                    href={publicationUrl(article.userUsername || "unknown")}
                     className="text-xs text-paper-muted underline-offset-2 hover:underline"
                   >
                     ~{article.userUsername}

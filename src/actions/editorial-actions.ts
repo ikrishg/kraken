@@ -14,6 +14,7 @@ import { useOnboarded } from "@/hooks/onboarded";
 import { db } from "@/lib/db";
 import { getAppUrl, getFromEmail, getResendClient } from "@/lib/resend";
 import { parsePublishDateInput } from "@/lib/utils/publish-date";
+import { issueUrl, publicationUrl } from "@/lib/utils/routes";
 
 export type EditorialIssueRecord = {
   id: string;
@@ -94,9 +95,9 @@ function revalidateEditorialPaths(
   revalidatePath("/");
   revalidatePath("/feed");
   revalidatePath("/editorial");
-  revalidatePath(`/~${username}`);
+  revalidatePath(publicationUrl(username));
   if (editionNumber) {
-    revalidatePath(`/~${username}/${editionNumber}`);
+    revalidatePath(issueUrl(username, editionNumber));
   }
 }
 

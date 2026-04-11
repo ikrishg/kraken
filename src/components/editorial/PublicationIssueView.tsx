@@ -4,6 +4,7 @@ import { DateDisplay } from "@/components/editorial/DateDisplay";
 import { IssueLikeControl } from "@/components/editorial/IssueLikeControl";
 import { SubscriptionBox } from "@/components/editorial/SubscriptionBox";
 import { MarkdownRender } from "@/lib/utils/markdown";
+import { issueUrl, publicationUrl } from "@/lib/utils/routes";
 
 interface SessionLike {
   user?: {
@@ -65,7 +66,7 @@ export function PublicationIssueView({
             userUsername={session?.user?.username}
             showAvatar={!!session}
             title={publicationTitle}
-            linkTo={`/~${username}`}
+            linkTo={publicationUrl(username)}
             date={publishedDate}
             className="mb-8"
           />
@@ -85,7 +86,7 @@ export function PublicationIssueView({
                 <div className="mt-5 flex flex-wrap items-center gap-4 text-sm text-paper-muted">
                   {issue.userUsername && (
                     <Link
-                      href={`/~${issue.userUsername}`}
+                      href={publicationUrl(issue.userUsername)}
                       className="text-paper-ink underline-offset-4 hover:underline"
                     >
                       by {issue.userName || issue.userUsername}
@@ -106,7 +107,7 @@ export function PublicationIssueView({
                     likeCount={issue.likeCount}
                     viewerHasLiked={issue.viewerHasLiked}
                     isAuthenticated={isAuthenticated}
-                    returnTo={`/~${username}/${issue.editionNumber}`}
+                    returnTo={issueUrl(username, issue.editionNumber)}
                   />
                 </div>
               </div>
@@ -137,7 +138,7 @@ export function PublicationIssueView({
                 isOwnPublication={isOwnPublication}
                 isSubscribed={isSubscribed}
                 isFollowing={isFollowing}
-                returnTo={`/~${username}`}
+                returnTo={publicationUrl(username)}
                 status={subscribe}
               />
             </aside>
