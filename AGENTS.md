@@ -201,3 +201,32 @@ When repo-wide drift shows up, prefer fixing the underlying code or automation s
 Kraken is a personal publishing platform for staying connected with friends through regular life updates. Share daily notes, weekly letters, or monthly check-ins on your own cadence. Your friends receive them predictably via email or a calm feed, without algorithms deciding who sees what.
 
 The platform maintains an editorial aesthetic (publications, mastheads, issues) as a design choice, but the tone is personal and intimate—like writing letters to friends rather than performing for an audience. It's social media made calmer, more predictable, and more focused on staying caught up with people you care about than competing for attention in an algorithmic feed.
+
+## Cursor Cloud specific instructions
+
+### Environment variables
+
+A `.env.local` file is required at the workspace root. The following variables must be set for the app to start:
+
+- `DATABASE_URL` — Neon serverless Postgres connection string (app crashes without it).
+- `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` — `getEnv()` in `auth.ts` throws at module load if either is missing. Set to placeholder values if Google OAuth is not needed.
+- `BETTER_AUTH_SECRET` — required by Better Auth for session signing.
+- `BETTER_AUTH_URL` — defaults to `http://localhost:3000` if unset.
+
+Resend, Vercel Domains, and Redis env vars are optional; those code paths no-op gracefully when unconfigured.
+
+### Running services
+
+- `pnpm dev` starts the Next.js 16 dev server on port 3000 (Turbopack).
+- The landing page (`/`), sign-in (`/auth/sign-in`), and sign-up (`/auth/sign-up`) render without a live database because `getSession()` is wrapped in a try/catch on the landing page. Authenticated routes will fail without a real `DATABASE_URL`.
+- There is no Docker, Redis, or other auxiliary service to start locally. The app is fully serverless.
+
+### Verification commands
+
+Standard commands are documented in the `Scripts and local workflow` section above. Key quick-reference:
+
+- `pnpm lint` — Biome static analysis (fast, no env vars needed).
+- `pnpm typecheck` — TypeScript check (no env vars needed).
+- `pnpm test` — Node test runner for utility tests (no env vars needed).
+- `pnpm check` — lint + typecheck combined gate.
+- `pnpm build` — production build (needs `.env.local` with at least `DATABASE_URL` placeholder).
