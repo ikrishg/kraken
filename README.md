@@ -4,18 +4,22 @@
 
 ## Stack
 
-- Next.js 16 App Router
-- Better Auth
-- Neon serverless Postgres with Drizzle
-- Tailwind CSS v4 with Base UI primitives
-- Resend for email delivery
-- Vercel Domains API for custom domain management
+The application code in this repository uses:
+
+- **Next.js 16** (App Router)
+- **Better Auth** for authentication (email/password, Google OAuth, magic links, email OTP, username onboarding, and 2FA-related plugins)
+- **Neon** serverless Postgres with **Drizzle ORM**
+- **Tailwind CSS v4** with **Base UI** primitives
+- **Resend** with **React Email** templates in `src/emails/**` for transactional and issue email
+- **Vercel Domains API** (via `src/lib/vercel-domains.ts`) for custom domain attach and verification
+
+This is not the older Clerk + Loops stack described in `.agents/GENESIS.md`. Auth and email in production paths go through Better Auth and Resend.
 
 ## Getting Started
 
 ```bash
 pnpm install
-cp .env.example .env.local # or create .env.local manually if you keep secrets elsewhere
+# Create .env.local with the variables listed below
 pnpm dev
 ```
 
@@ -26,6 +30,10 @@ Open `http://localhost:3000` to view the app.
 - `pnpm dev` runs the app.
 - `pnpm build` creates a production build.
 - `pnpm lint` runs Biome checks.
+- `pnpm typecheck` runs TypeScript with no emit.
+- `pnpm test` runs Node test files for shared utilities.
+- `pnpm check` runs lint and typecheck.
+- `pnpm verify` runs check, test, and build.
 - `pnpm format` formats the codebase with Biome.
 - `pnpm db:generate`, `pnpm db:migrate`, `pnpm db:push`, and `pnpm db:check` manage Drizzle schema workflows.
 - `pnpm db:seed` seeds sample publications and issues from `scripts/seed.ts`; it expects at least one real user to already exist.
@@ -33,9 +41,15 @@ Open `http://localhost:3000` to view the app.
 
 ## Main Routes
 
--  - `/@username` for the profile-style public view.
--  - `/~username` for the publication-style view with subscription controls.
--  - `/~username/[editionNumber]` for the publication-style issue view.
+- `/` is the landing page; signed-in users are redirected to `/feed` (use `/home` to view the landing page while signed in).
+- `/feed` is the reader feed of recent published issues.
+- `/editorial` is the writer workspace (editing happens in this UI; there is no separate `/editorial/[id]` page).
+- `/settings` manages profile, publication title, and custom domains.
+- `/subscriptions` manages reader subscriptions.
+- `/auth/*` covers sign-in, sign-up, email auth, verify-email, onboarding, and auth state pages.
+- `/@username` is the profile-style public view.
+- `/~username` is the publication-style view with subscription controls.
+- `/~username/[editionNumber]` is the publication-style issue view.
 
 For a compact route map and notes on the public/domain routing split, see [docs/routes.md](docs/routes.md).
 
@@ -43,14 +57,15 @@ For a compact route map and notes on the public/domain routing split, see [docs/
 
 - Root layout and global fonts live in `src/app/layout.tsx`.
 - App routing lives in `src/app/**`.
+- Hostname and custom-domain rewriting live in `proxy.ts` (not `middleware.ts`).
 - Better Auth is configured in `auth.ts`, with the API handler in `src/app/api/auth/[...all]/route.ts`.
-- Drizzle schema is split between `auth-schema.ts` and `src/db/schema.ts`.
+- Drizzle schema is split between `auth-schema.ts` (Better Auth tables) and `src/db/schema.ts` (product tables).
 - The Drizzle client lives in `src/lib/db.ts` and loads `.env.local` directly.
 - Server actions live in `src/actions/**`.
 - Editorial UI lives in `src/components/editorial/**`.
 - Auth UI lives in `src/components/auth/**`.
 - Email templates live in `src/emails/**`.
-- Custom domain resolution happens in `proxy.ts` and `src/app/api/internal/domain-lookup/route.ts`.
+- Custom domain resolution uses `proxy.ts` and `src/app/api/internal/domain-lookup/route.ts`.
 
 ## Environment Variables
 
