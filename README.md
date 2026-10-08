@@ -43,7 +43,7 @@ Open `http://localhost:3000` to view the app.
 
 - `/` is the landing page; signed-in users are redirected to `/feed` (use `/home` to view the landing page while signed in).
 - `/feed` is the reader feed of recent published issues.
-- `/editorial` is the writer workspace (editing happens in this UI; there is no separate `/editorial/[id]` page).
+- `/editorial` is the writer workspace. Article editing currently happens in this UI; the `/editorial/[id]` route described in `AGENTS.md` is not built yet.
 - `/settings` manages profile, publication title, and custom domains.
 - `/subscriptions` manages reader subscriptions.
 - `/auth/*` covers sign-in, sign-up, email auth, verify-email, onboarding, and auth state pages.
@@ -69,7 +69,7 @@ For a compact route map and notes on the public/domain routing split, see [docs/
 
 ## Environment Variables
 
-The code currently expects some combination of the following values:
+The code currently expects some combination of the following values. `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` are both required to initialize auth (including email/password sign-in), because `auth.ts` reads them at module load; use placeholder values if you don't need Google OAuth.
 
 - `DATABASE_URL`
 - `BETTER_AUTH_SECRET`
@@ -84,7 +84,7 @@ The code currently expects some combination of the following values:
 - `VERCEL_TEAM_ID`
 - `TEST_EMAIL_TO`
 
-Some email and domain paths intentionally no-op or degrade gracefully when configuration is missing. Check the implementation before changing those behaviors.
+Email sending is skipped when `RESEND_API_KEY` is missing. Custom-domain actions need all three `VERCEL_*` values and fail without them. Check the implementation before changing those behaviors.
 
 ## Contributing Notes
 
