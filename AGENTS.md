@@ -213,7 +213,10 @@ A `.env.local` file is required at the workspace root. The following variables m
 - `BETTER_AUTH_SECRET` — required by Better Auth for session signing.
 - `BETTER_AUTH_URL` — defaults to `http://localhost:3000` if unset.
 
-Resend, Vercel Domains, and Redis env vars are optional; those code paths no-op gracefully when unconfigured.
+Resend and Vercel Domains env vars are optional for starting the app:
+
+- Resend (`RESEND_API_KEY`, `RESEND_FROM_EMAIL`): email sending is skipped when `RESEND_API_KEY` is unset.
+- Vercel Domains (`VERCEL_API_TOKEN`, `VERCEL_PROJECT_ID`, `VERCEL_TEAM_ID`): custom-domain add/verify/remove actions do not no-op. `getVercelContext()` throws on the first missing variable and the actions redirect to failure states without saving the domain. Set all three to test custom domains; a failure without them is a config issue, not a product regression.
 
 ### Running services
 
@@ -229,4 +232,4 @@ Standard commands are documented in the `Scripts and local workflow` section abo
 - `pnpm typecheck` — TypeScript check (no env vars needed).
 - `pnpm test` — Node test runner for utility tests (no env vars needed).
 - `pnpm check` — lint + typecheck combined gate.
-- `pnpm build` — production build (needs `.env.local` with at least `DATABASE_URL` placeholder).
+- `pnpm build` — production build (needs `.env.local` with at least placeholder `DATABASE_URL`, `GOOGLE_CLIENT_ID`, and `GOOGLE_CLIENT_SECRET`, since `auth.ts` reads the Google credentials at module load).
