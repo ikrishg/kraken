@@ -216,7 +216,7 @@ A `.env.local` file is required at the workspace root. The following variables m
 Resend and Vercel Domains env vars are optional for starting the app:
 
 - Resend (`RESEND_API_KEY`, `RESEND_FROM_EMAIL`): email sending is skipped when `RESEND_API_KEY` is unset.
-- Vercel Domains (`VERCEL_API_TOKEN`, `VERCEL_PROJECT_ID`, `VERCEL_TEAM_ID`): custom-domain add/verify/remove actions do not no-op. `getVercelContext()` throws on the first missing variable and the actions redirect to failure states without saving the domain. Set all three to test custom domains; a failure without them is a config issue, not a product regression.
+- Vercel Domains (`VERCEL_API_TOKEN`, `VERCEL_PROJECT_ID`, `VERCEL_TEAM_ID`): custom-domain add and verify actions do not no-op. `getVercelContext()` throws on the first missing variable and those actions redirect to failure states without saving the domain. Remove still clears the saved domain locally (the Vercel error is swallowed), but nothing is removed from Vercel. Set all three to test custom domains; a failure without them is a config issue, not a product regression.
 
 ### Running services
 
