@@ -21,10 +21,11 @@ const crimsonText = Crimson_Text({
   display: "swap",
 });
 
-const siteUrl =
+const siteUrl = (
   process.env.NEXT_PUBLIC_APP_URL ||
   process.env.BETTER_AUTH_URL ||
-  "https://kraken.krishg.com";
+  "https://kraken.krishg.com"
+).replace(/\/+$/, "");
 
 const title = "Kraken — Your Regular Updates, Delivered";
 const description =
