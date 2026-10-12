@@ -21,10 +21,33 @@ const crimsonText = Crimson_Text({
   display: "swap",
 });
 
+const siteUrl =
+  process.env.NEXT_PUBLIC_APP_URL ||
+  process.env.BETTER_AUTH_URL ||
+  "https://kraken.krishg.com";
+
+const title = "Kraken — Your Regular Updates, Delivered";
+const description =
+  "Write regular updates to your friends. Daily, weekly, monthly, or custom — your choice when to publish.";
+
 export const metadata: Metadata = {
-  title: "Kraken — Your Regular Updates, Delivered",
-  description:
-    "Write regular updates to your friends. Daily, weekly, monthly, or custom — your choice when to publish.",
+  metadataBase: new URL(siteUrl),
+  title,
+  description,
+  openGraph: {
+    type: "website",
+    siteName: "Kraken",
+    url: "/",
+    title,
+    description,
+    images: [{ url: "/apple-icon.png", alt: "Kraken" }],
+  },
+  twitter: {
+    card: "summary",
+    title,
+    description,
+    images: ["/apple-icon.png"],
+  },
 };
 
 export default async function RootLayout({
