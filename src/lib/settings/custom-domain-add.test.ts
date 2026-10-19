@@ -315,6 +315,94 @@ test("executeCustomDomainAdd re-adds the same domain through claim and Vercel", 
   ]);
 });
 
+test("executeCustomDomainAdd invalidates previous and new domain keys after claim and final save", async () => {
+  const invalidated: string[] = [];
+
+  const outcome = await executeCustomDomainAdd({
+    requestedDomain: "new.example.com",
+    current: {
+      vercelHostname: "old.example.com",
+      domainKey: "old.example.com",
+      verified: true,
+    },
+    currentUserId: "user-a",
+    conflictOwner: null,
+    claimInDatabase: async () => "claimed",
+    addToVercel: async () => ({ verified: true }),
+    rollbackClaim: async () => true,
+    removePreviousFromVercel: async () => {},
+    readPublicationDomain: async () => null,
+    invalidateDomainCache: async (domainKey) => {
+      invalidated.push(domainKey);
+    },
+  });
+
+  assert.equal(outcome.status, "verified");
+  assert.deepEqual(invalidated, [
+    "old.example.com",
+    "new.example.com",
+    "old.example.com",
+    "new.example.com",
+  ]);
+});
+
+test("executeCustomDomainAdd invalidates domain keys after rollback", async () => {
+  const invalidated: string[] = [];
+
+  const outcome = await executeCustomDomainAdd({
+    requestedDomain: "new.example.com",
+    current: {
+      vercelHostname: "old.example.com",
+      domainKey: "old.example.com",
+      verified: true,
+    },
+    currentUserId: "user-a",
+    conflictOwner: null,
+    claimInDatabase: async () => "claimed",
+    addToVercel: async () => {
+      throw new Error("vercel add failed");
+    },
+    rollbackClaim: async () => true,
+    removePreviousFromVercel: async () => {},
+    readPublicationDomain: async () => null,
+    invalidateDomainCache: async (domainKey) => {
+      invalidated.push(domainKey);
+    },
+  });
+
+  assert.deepEqual(outcome, { status: "add-failed", rolledBack: true });
+  assert.deepEqual(invalidated, [
+    "old.example.com",
+    "new.example.com",
+    "old.example.com",
+    "new.example.com",
+  ]);
+});
+
+test("executeCustomDomainAdd skips rollback invalidation when rollback does not run", async () => {
+  const invalidated: string[] = [];
+
+  const outcome = await executeCustomDomainAdd({
+    requestedDomain: "new.example.com",
+    current: emptyCurrent,
+    currentUserId: "user-a",
+    conflictOwner: null,
+    claimInDatabase: async () => "claimed",
+    addToVercel: async () => {
+      throw new Error("vercel add failed");
+    },
+    rollbackClaim: async () => false,
+    removePreviousFromVercel: async () => {},
+    readPublicationDomain: async () => null,
+    invalidateDomainCache: async (domainKey) => {
+      invalidated.push(domainKey);
+    },
+  });
+
+  assert.deepEqual(outcome, { status: "add-failed", rolledBack: false });
+  assert.deepEqual(invalidated, ["new.example.com", "new.example.com"]);
+});
+
 test("executeCustomDomainAdd blocks overlapping changes while verification is pending", async () => {
   let claimCalls = 0;
 

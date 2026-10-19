@@ -19,6 +19,26 @@ export type AddCustomDomainOutcome =
   | { status: "verified"; claim: CustomDomainClaim }
   | { status: "pending"; claim: CustomDomainClaim };
 
+export async function invalidateDomainCacheKeys(
+  invalidateDomainCache: ((domainKey: string) => Promise<void>) | undefined,
+  ...domainKeys: (string | null | undefined)[]
+): Promise<void> {
+  if (!invalidateDomainCache) {
+    return;
+  }
+
+  const seen = new Set<string>();
+
+  for (const domainKey of domainKeys) {
+    if (!domainKey || seen.has(domainKey)) {
+      continue;
+    }
+
+    seen.add(domainKey);
+    await invalidateDomainCache(domainKey);
+  }
+}
+
 export function shouldRemovePreviousVercelHost(
   claim: CustomDomainClaim,
   previousVercelHostname: string,
@@ -76,6 +96,7 @@ export async function executeCustomDomainAdd(params: {
     vercelHostname: string | null;
     domainKey: string | null;
   } | null>;
+  invalidateDomainCache?: (domainKey: string) => Promise<void>;
   logWarning?: (message: string) => void;
 }): Promise<AddCustomDomainOutcome> {
   const parsed = parseCustomDomainInput(params.requestedDomain);
@@ -124,6 +145,12 @@ export async function executeCustomDomainAdd(params: {
     return { status: "change-in-progress" };
   }
 
+  await invalidateDomainCacheKeys(
+    params.invalidateDomainCache,
+    previous.domainKey,
+    claim.domainKey,
+  );
+
   try {
     const result = await params.addToVercel(claim.vercelHostname);
 
@@ -157,11 +184,26 @@ export async function executeCustomDomainAdd(params: {
       }
     }
 
+    await invalidateDomainCacheKeys(
+      params.invalidateDomainCache,
+      previous.domainKey,
+      claim.domainKey,
+    );
+
     return result.verified
       ? { status: "verified", claim }
       : { status: "pending", claim };
   } catch {
     const rolledBack = await params.rollbackClaim(claim, previous);
+
+    if (rolledBack) {
+      await invalidateDomainCacheKeys(
+        params.invalidateDomainCache,
+        previous.domainKey,
+        claim.domainKey,
+      );
+    }
+
     return { status: "add-failed", rolledBack };
   }
 }

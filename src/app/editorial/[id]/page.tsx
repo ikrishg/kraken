@@ -69,6 +69,7 @@ export default async function EditorialIssuePage({ params }: PageProps) {
         </div>
 
         <EditorialWorkspace
+          key={id}
           username={username}
           initialIssues={initialIssues}
           initialActiveIssueId={id}
