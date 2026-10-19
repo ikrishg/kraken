@@ -1,16 +1,16 @@
 "use server";
 
-import { and, eq, inArray, ne } from "drizzle-orm";
+import { and, eq, ne } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
-import { forbidden, redirect } from "next/navigation";
+import { redirect } from "next/navigation";
 import { publications, user } from "@/db/schema";
 import { useOnboarded } from "@/hooks/onboarded";
 import { db } from "@/lib/db";
-import {
-  callerOwnsStoredDomain,
-  removeCustomDomainIfOwned,
-} from "@/lib/settings/custom-domain-security";
-import { normalizeDomain } from "@/lib/utils/domain";
+import { isUniqueViolation } from "@/lib/db-errors";
+import { executeCustomDomainAdd } from "@/lib/settings/custom-domain-add";
+import { removeCustomDomainIfOwned } from "@/lib/settings/custom-domain-security";
+import { canVerifyStoredDomain } from "@/lib/settings/custom-domain-verify";
+import { normalizeStoredCustomDomain } from "@/lib/utils/domain";
 import {
   addProjectDomain,
   removeProjectDomain,
@@ -36,23 +36,12 @@ function toSettingsRedirect(status: string, detail?: string | null): never {
   redirect(`/settings?${params.toString()}`);
 }
 
-function domainLookupValues(domain: string): string[] {
-  const normalized = normalizeDomain(domain);
-
-  if (!normalized) {
-    return [];
-  }
-
-  const bare = normalized.startsWith("www.") ? normalized.slice(4) : normalized;
-
-  return [...new Set([normalized, bare, `www.${bare}`])];
-}
-
 async function getUserPublication(userId: string) {
   return db
     .select({
       id: publications.id,
       customDomain: publications.customDomain,
+      customDomainVerified: publications.customDomainVerified,
     })
     .from(publications)
     .where(eq(publications.userId, userId))
@@ -81,6 +70,26 @@ async function ensurePublication(userId: string, fallbackName: string) {
     .then((rows) => rows[0]);
 
   return created;
+}
+
+async function findConflictingDomainOwner(
+  bareDomain: string,
+  excludeUserId: string,
+) {
+  return db
+    .select({
+      id: publications.id,
+      userId: publications.userId,
+      customDomain: publications.customDomain,
+    })
+    .from(publications)
+    .where(
+      and(
+        eq(publications.customDomain, bareDomain),
+        ne(publications.userId, excludeUserId),
+      ),
+    )
+    .then((rows) => rows[0]);
 }
 
 export async function updateDisplayName(formData: FormData) {
@@ -129,10 +138,10 @@ export async function updatePublicationTitle(formData: FormData) {
 export async function addCustomDomain(formData: FormData) {
   const session = await useOnboarded();
   const rawDomain = formData.get("customDomain");
-  const domain =
-    typeof rawDomain === "string" ? normalizeDomain(rawDomain) : "";
+  const bareDomain =
+    typeof rawDomain === "string" ? normalizeStoredCustomDomain(rawDomain) : "";
 
-  if (!domain) {
+  if (!bareDomain) {
     toSettingsRedirect("invalid-domain");
   }
 
@@ -141,50 +150,113 @@ export async function addCustomDomain(formData: FormData) {
     `${session.user.name || session.user.username} Publication`,
   );
 
-  const lookupValues = domainLookupValues(domain);
+  const existingPublication = await getUserPublication(session.user.id);
+  const previousDomain = existingPublication?.customDomain ?? null;
+  const previousVerified = existingPublication?.customDomainVerified ?? false;
 
-  const conflictingOwner = await db
-    .select({ id: publications.id })
-    .from(publications)
-    .where(
-      and(
-        inArray(publications.customDomain, lookupValues),
-        ne(publications.userId, session.user.id),
-      ),
-    )
-    .then((rows) => rows[0]);
+  const conflict = await findConflictingDomainOwner(
+    bareDomain,
+    session.user.id,
+  );
 
-  if (conflictingOwner) {
-    forbidden();
+  const outcome = await executeCustomDomainAdd({
+    requestedDomain: rawDomain as string,
+    currentDomain: previousDomain,
+    currentUserId: session.user.id,
+    conflictOwner: conflict
+      ? {
+          userId: conflict.userId,
+          bareDomain: normalizeStoredCustomDomain(conflict.customDomain || ""),
+        }
+      : null,
+    removeFromVercel: removeProjectDomain,
+    addToVercel: addProjectDomain,
+    claimInDatabase: async (nextDomain) => {
+      try {
+        await db
+          .update(publications)
+          .set({
+            customDomain: nextDomain,
+            customDomainVerified: false,
+            updatedAt: new Date(),
+          })
+          .where(eq(publications.id, publication.id));
+
+        return "claimed";
+      } catch (error) {
+        if (isUniqueViolation(error)) {
+          return "in-use";
+        }
+
+        throw error;
+      }
+    },
+    restoreDatabase: async (restoredDomain) => {
+      await db
+        .update(publications)
+        .set({
+          customDomain: restoredDomain,
+          customDomainVerified: restoredDomain ? previousVerified : false,
+          updatedAt: new Date(),
+        })
+        .where(eq(publications.id, publication.id));
+    },
+  });
+
+  if (outcome.status === "invalid") {
+    toSettingsRedirect("invalid-domain");
   }
 
-  try {
-    const result = await addProjectDomain(domain);
+  if (outcome.status === "reserved") {
+    toSettingsRedirect("domain-reserved");
+  }
 
+  if (outcome.status === "in-use") {
+    toSettingsRedirect("domain-in-use");
+  }
+
+  if (outcome.status === "remove-previous-failed") {
+    toSettingsRedirect(
+      "domain-add-failed",
+      "Could not remove your previous domain from Vercel. Nothing was changed.",
+    );
+  }
+
+  if (outcome.status === "add-failed") {
+    toSettingsRedirect(
+      "domain-add-failed",
+      "Could not add the domain on Vercel. Your previous domain was restored.",
+    );
+  }
+
+  if (outcome.status === "verified" || outcome.status === "pending") {
     await db
       .update(publications)
       .set({
-        customDomain: domain,
-        customDomainVerified: result.verified,
+        customDomainVerified: outcome.status === "verified",
         updatedAt: new Date(),
       })
-      .where(eq(publications.id, publication.id));
-
-    revalidatePath("/settings");
-    toSettingsRedirect(
-      result.verified ? "domain-added" : "domain-pending-verification",
-    );
-  } catch (error) {
-    const detail = getErrorDetail(error);
-    toSettingsRedirect("domain-add-failed", detail);
+      .where(
+        and(
+          eq(publications.id, publication.id),
+          eq(publications.customDomain, outcome.bareDomain),
+        ),
+      );
   }
+
+  revalidatePath("/settings");
+  toSettingsRedirect(
+    outcome.status === "verified"
+      ? "domain-added"
+      : "domain-pending-verification",
+  );
 }
 
 export async function verifyCustomDomain(formData: FormData) {
   const session = await useOnboarded();
   const rawDomain = formData.get("customDomain");
   const domain =
-    typeof rawDomain === "string" ? normalizeDomain(rawDomain) : "";
+    typeof rawDomain === "string" ? normalizeStoredCustomDomain(rawDomain) : "";
 
   if (!domain) {
     toSettingsRedirect("invalid-domain");
@@ -192,26 +264,36 @@ export async function verifyCustomDomain(formData: FormData) {
 
   const publication = await getUserPublication(session.user.id);
 
-  if (!callerOwnsStoredDomain(publication?.customDomain, domain)) {
-    forbidden();
+  if (!canVerifyStoredDomain(publication?.customDomain, domain)) {
+    toSettingsRedirect("domain-forbidden");
   }
 
   const ownedDomain = publication?.customDomain;
   if (!ownedDomain) {
-    forbidden();
+    toSettingsRedirect("domain-forbidden");
   }
 
   try {
     const result = await verifyProjectDomain(ownedDomain);
 
-    await db
+    const updated = await db
       .update(publications)
       .set({
         customDomain: ownedDomain,
         customDomainVerified: result.verified,
         updatedAt: new Date(),
       })
-      .where(eq(publications.id, publication.id));
+      .where(
+        and(
+          eq(publications.id, publication.id),
+          eq(publications.customDomain, ownedDomain),
+        ),
+      )
+      .returning({ id: publications.id });
+
+    if (!publication || updated.length === 0) {
+      toSettingsRedirect("domain-forbidden");
+    }
 
     revalidatePath("/settings");
     toSettingsRedirect(
@@ -227,7 +309,7 @@ export async function removeCustomDomain(formData: FormData) {
   const session = await useOnboarded();
   const rawDomain = formData.get("customDomain");
   const domain =
-    typeof rawDomain === "string" ? normalizeDomain(rawDomain) : "";
+    typeof rawDomain === "string" ? normalizeStoredCustomDomain(rawDomain) : "";
 
   if (!domain) {
     toSettingsRedirect("invalid-domain");
@@ -242,21 +324,33 @@ export async function removeCustomDomain(formData: FormData) {
   });
 
   if (outcome.status === "forbidden") {
-    forbidden();
+    toSettingsRedirect("domain-forbidden");
   }
 
   if (outcome.status === "invalid" || !publication) {
     toSettingsRedirect("invalid-domain");
   }
 
-  await db
+  const ownedDomain = outcome.ownedDomain;
+
+  const updated = await db
     .update(publications)
     .set({
       customDomain: null,
       customDomainVerified: false,
       updatedAt: new Date(),
     })
-    .where(eq(publications.id, publication.id));
+    .where(
+      and(
+        eq(publications.id, publication.id),
+        eq(publications.customDomain, ownedDomain),
+      ),
+    )
+    .returning({ id: publications.id });
+
+  if (updated.length === 0) {
+    toSettingsRedirect("domain-forbidden");
+  }
 
   revalidatePath("/settings");
   toSettingsRedirect("domain-removed");

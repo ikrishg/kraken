@@ -31,6 +31,11 @@ const statusCopy: Record<string, string> = {
   "domain-removed": "Custom domain removed.",
   "domain-verify-failed": "Could not verify domain yet.",
   "invalid-domain": "Please enter a valid domain.",
+  "domain-in-use": "That domain is already connected to another publication.",
+  "domain-forbidden":
+    "You can only manage the custom domain on your own publication.",
+  "domain-reserved":
+    "That hostname is reserved for the Kraken app and cannot be used as a custom domain.",
 };
 
 type DomainVerificationRecord = {
