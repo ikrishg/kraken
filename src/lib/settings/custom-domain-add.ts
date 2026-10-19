@@ -1,22 +1,28 @@
+import type { PublicationDomainSnapshot } from "@/lib/settings/custom-domain-restore";
+import { canStartDomainClaim } from "@/lib/settings/custom-domain-restore";
 import {
   isReservedCustomDomain,
-  normalizeStoredCustomDomain,
+  parseCustomDomainInput,
 } from "@/lib/utils/domain";
+
+export type CustomDomainClaim = {
+  vercelHostname: string;
+  domainKey: string;
+};
 
 export type AddCustomDomainOutcome =
   | { status: "invalid" }
   | { status: "reserved" }
   | { status: "in-use" }
-  | { status: "remove-previous-failed" }
-  | { status: "claim-failed" }
-  | { status: "add-failed" }
-  | { status: "verified"; bareDomain: string }
-  | { status: "pending"; bareDomain: string };
+  | { status: "change-in-progress" }
+  | { status: "add-failed"; rolledBack: boolean }
+  | { status: "verified"; claim: CustomDomainClaim }
+  | { status: "pending"; claim: CustomDomainClaim };
 
 export function shouldBlockAddForConflict(
-  bareDomain: string,
+  domainKey: string,
   currentUserId: string,
-  owner: { userId: string; bareDomain: string } | null,
+  owner: { userId: string; domainKey: string } | null,
 ): boolean {
   if (!owner) {
     return false;
@@ -26,32 +32,43 @@ export function shouldBlockAddForConflict(
     return false;
   }
 
-  return owner.bareDomain === bareDomain;
+  return owner.domainKey === domainKey;
 }
 
 export async function executeCustomDomainAdd(params: {
   requestedDomain: string;
-  currentDomain: string | null;
-  conflictOwner: { userId: string; bareDomain: string } | null;
+  current: PublicationDomainSnapshot;
+  conflictOwner: { userId: string; domainKey: string } | null;
   currentUserId: string;
-  removeFromVercel: (domain: string) => Promise<void>;
-  addToVercel: (domain: string) => Promise<{ verified: boolean }>;
-  claimInDatabase: (bareDomain: string) => Promise<"claimed" | "in-use">;
-  restoreDatabase: (previousDomain: string | null) => Promise<void>;
+  claimInDatabase: (
+    claim: CustomDomainClaim,
+  ) => Promise<"claimed" | "in-use" | "blocked">;
+  addToVercel: (vercelHostname: string) => Promise<{ verified: boolean }>;
+  rollbackClaim: (
+    claim: CustomDomainClaim,
+    previous: PublicationDomainSnapshot,
+  ) => Promise<boolean>;
+  removePreviousFromVercel: (vercelHostname: string) => Promise<void>;
+  logWarning?: (message: string) => void;
 }): Promise<AddCustomDomainOutcome> {
-  const bareDomain = normalizeStoredCustomDomain(params.requestedDomain);
+  const parsed = parseCustomDomainInput(params.requestedDomain);
 
-  if (!bareDomain) {
+  if (!parsed) {
     return { status: "invalid" };
   }
 
-  if (isReservedCustomDomain(bareDomain)) {
+  const claim: CustomDomainClaim = {
+    vercelHostname: parsed.vercelHostname,
+    domainKey: parsed.domainKey,
+  };
+
+  if (isReservedCustomDomain(params.requestedDomain)) {
     return { status: "reserved" };
   }
 
   if (
     shouldBlockAddForConflict(
-      bareDomain,
+      claim.domainKey,
       params.currentUserId,
       params.conflictOwner,
     )
@@ -59,32 +76,51 @@ export async function executeCustomDomainAdd(params: {
     return { status: "in-use" };
   }
 
-  const previousDomain = params.currentDomain
-    ? normalizeStoredCustomDomain(params.currentDomain)
-    : null;
-
-  if (previousDomain && previousDomain !== bareDomain) {
-    try {
-      await params.removeFromVercel(previousDomain);
-    } catch {
-      return { status: "remove-previous-failed" };
-    }
+  if (
+    !canStartDomainClaim(
+      params.current.domainKey,
+      params.current.verified,
+      claim.domainKey,
+    )
+  ) {
+    return { status: "change-in-progress" };
   }
 
-  const claimResult = await params.claimInDatabase(bareDomain);
+  const previous = params.current;
+  const claimResult = await params.claimInDatabase(claim);
 
   if (claimResult === "in-use") {
     return { status: "in-use" };
   }
 
+  if (claimResult === "blocked") {
+    return { status: "change-in-progress" };
+  }
+
   try {
-    const result = await params.addToVercel(bareDomain);
+    const result = await params.addToVercel(claim.vercelHostname);
+
+    if (
+      previous.vercelHostname &&
+      previous.domainKey &&
+      previous.domainKey !== claim.domainKey
+    ) {
+      try {
+        await params.removePreviousFromVercel(previous.vercelHostname);
+      } catch (error) {
+        const detail =
+          error instanceof Error ? error.message : "unknown Vercel error";
+        params.logWarning?.(
+          `Best-effort removal of previous Vercel domain ${previous.vercelHostname} failed: ${detail}`,
+        );
+      }
+    }
 
     return result.verified
-      ? { status: "verified", bareDomain }
-      : { status: "pending", bareDomain };
+      ? { status: "verified", claim }
+      : { status: "pending", claim };
   } catch {
-    await params.restoreDatabase(previousDomain);
-    return { status: "add-failed" };
+    const rolledBack = await params.rollbackClaim(claim, previous);
+    return { status: "add-failed", rolledBack };
   }
 }

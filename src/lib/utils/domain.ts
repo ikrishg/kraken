@@ -23,6 +23,10 @@ export function normalizeDomain(raw: string): string {
   return hostname;
 }
 
+export function normalizeVercelCustomDomain(raw: string): string {
+  return normalizeDomain(raw);
+}
+
 export function normalizeStoredCustomDomain(raw: string): string {
   const normalized = normalizeDomain(raw);
 
@@ -33,9 +37,23 @@ export function normalizeStoredCustomDomain(raw: string): string {
   return stripWww(normalized);
 }
 
+export function parseCustomDomainInput(raw: string): {
+  vercelHostname: string;
+  domainKey: string;
+} | null {
+  const vercelHostname = normalizeVercelCustomDomain(raw);
+  const domainKey = normalizeStoredCustomDomain(raw);
+
+  if (!vercelHostname || !domainKey) {
+    return null;
+  }
+
+  return { vercelHostname, domainKey };
+}
+
 export function domainsReferToSameHost(a: string, b: string): boolean {
-  const left = normalizeStoredCustomDomain(a) || normalizeDomain(a);
-  const right = normalizeStoredCustomDomain(b) || normalizeDomain(b);
+  const left = normalizeStoredCustomDomain(a);
+  const right = normalizeStoredCustomDomain(b);
 
   if (!left || !right) {
     return false;
@@ -75,13 +93,14 @@ export function getAppReservedHosts(): string[] {
 }
 
 export function isReservedCustomDomain(raw: string): boolean {
+  const vercelHostname = normalizeVercelCustomDomain(raw);
   const bare = normalizeStoredCustomDomain(raw);
 
-  if (!bare) {
+  if (!vercelHostname || !bare) {
     return true;
   }
 
-  if (bare.endsWith(".vercel.app")) {
+  if (bare === "vercel.app" || bare.endsWith(".vercel.app")) {
     return true;
   }
 

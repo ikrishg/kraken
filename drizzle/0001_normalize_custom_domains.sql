@@ -1,3 +1,10 @@
+ALTER TABLE "publications" ADD COLUMN "custom_domain_key" text;--> statement-breakpoint
 UPDATE "publications"
-SET "custom_domain" = regexp_replace(lower(trim(both '.' from "custom_domain")), '^www\.', '')
-WHERE "custom_domain" IS NOT NULL;
+SET "custom_domain_key" = regexp_replace(
+  lower(trim(both '.' from "custom_domain")),
+  '^www\.',
+  ''
+)
+WHERE "custom_domain" IS NOT NULL;--> statement-breakpoint
+ALTER TABLE "publications" DROP CONSTRAINT "publications_custom_domain_unique";--> statement-breakpoint
+CREATE UNIQUE INDEX "publications_custom_domain_key_unique" ON "publications" USING btree ("custom_domain_key");

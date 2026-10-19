@@ -5,6 +5,8 @@ import {
   isReservedCustomDomain,
   normalizeDomain,
   normalizeStoredCustomDomain,
+  normalizeVercelCustomDomain,
+  parseCustomDomainInput,
 } from "@/lib/utils/domain";
 
 test("normalizeDomain extracts a hostname from user input", () => {
@@ -26,6 +28,20 @@ test("normalizeStoredCustomDomain lowercases and strips www", () => {
   );
 });
 
+test("normalizeVercelCustomDomain keeps www hostnames", () => {
+  assert.equal(
+    normalizeVercelCustomDomain("HTTPS://WWW.News.Example.com."),
+    "www.news.example.com",
+  );
+});
+
+test("parseCustomDomainInput separates Vercel hostname from ownership key", () => {
+  assert.deepEqual(parseCustomDomainInput("WWW.News.Example.com."), {
+    vercelHostname: "www.news.example.com",
+    domainKey: "news.example.com",
+  });
+});
+
 test("normalizeDomain rejects hostnames with ports", () => {
   assert.equal(normalizeDomain("news.example.com:443"), "");
   assert.equal(normalizeStoredCustomDomain("news.example.com:443"), "");
@@ -35,6 +51,7 @@ test("isReservedCustomDomain blocks vercel.app and app hostnames", () => {
   const previousAppUrl = process.env.NEXT_PUBLIC_APP_URL;
   process.env.NEXT_PUBLIC_APP_URL = "https://www.kraken.example";
 
+  assert.equal(isReservedCustomDomain("vercel.app"), true);
   assert.equal(isReservedCustomDomain("preview.vercel.app"), true);
   assert.equal(isReservedCustomDomain("www.kraken.example"), true);
   assert.equal(isReservedCustomDomain("kraken.example"), true);

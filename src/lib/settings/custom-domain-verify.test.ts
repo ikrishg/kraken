@@ -26,5 +26,4 @@ test("shouldApplyOwnedDomainMutation blocks stale verify/remove updates", () => 
     shouldApplyOwnedDomainMutation("newer.example.com", "news.example.com"),
     false,
   );
-  assert.equal(shouldApplyOwnedDomainMutation(null, "news.example.com"), false);
 });

@@ -36,6 +36,8 @@ const statusCopy: Record<string, string> = {
     "You can only manage the custom domain on your own publication.",
   "domain-reserved":
     "That hostname is reserved for the Kraken app and cannot be used as a custom domain.",
+  "domain-change-in-progress":
+    "Finish or cancel the current domain change before starting another one.",
 };
 
 type DomainVerificationRecord = {
