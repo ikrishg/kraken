@@ -18,6 +18,12 @@ redis.call('SET', KEYS[1], ARGV[2], 'EX', ARGV[3])
 return 1
 `;
 
+const DOMAIN_CACHE_INVALIDATE_SCRIPT = `
+redis.call('INCR', KEYS[1])
+redis.call('DEL', KEYS[2])
+return 1
+`;
+
 function cacheEnvironmentPrefix(): string {
   return process.env.VERCEL_ENV ?? "development";
 }
@@ -49,8 +55,43 @@ export async function readDomainCacheGeneration(
   redis: Redis,
   domainKey: string,
 ): Promise<string> {
-  const value = await redis.get<string>(domainCacheGenerationKey(domainKey));
-  return value ?? "0";
+  const value = await redis.get(domainCacheGenerationKey(domainKey));
+  if (value === null || value === undefined) {
+    return "0";
+  }
+  return String(value);
+}
+
+export async function readDomainCacheGenerationAndValue(
+  redis: Redis,
+  domainKey: string,
+): Promise<{ generation: string; cachedUsername: string | null | undefined }> {
+  const cacheKey = domainCacheKey(domainKey);
+  const generationKey = domainCacheGenerationKey(domainKey);
+
+  try {
+    const [cachedRaw, generationRaw] = await redis.mget<[string, string]>(
+      cacheKey,
+      generationKey,
+    );
+
+    const generation =
+      generationRaw === null || generationRaw === undefined
+        ? "0"
+        : String(generationRaw);
+
+    if (cachedRaw === null || cachedRaw === undefined) {
+      return { generation, cachedUsername: undefined };
+    }
+
+    const cached = String(cachedRaw);
+    return {
+      generation,
+      cachedUsername: cached === "" ? null : cached,
+    };
+  } catch {
+    return { generation: "0", cachedUsername: undefined };
+  }
 }
 
 export async function setDomainCacheIfGenerationMatches(
@@ -76,8 +117,11 @@ export async function invalidateDomainCache(domainKey: string): Promise<void> {
   }
 
   try {
-    await redis.incr(domainCacheGenerationKey(domainKey));
-    await redis.del(domainCacheKey(domainKey));
+    await redis.eval(
+      DOMAIN_CACHE_INVALIDATE_SCRIPT,
+      [domainCacheGenerationKey(domainKey), domainCacheKey(domainKey)],
+      [],
+    );
   } catch {
     // Ignore cache invalidation failures
   }
@@ -128,6 +172,7 @@ export function getRedisClient(): Redis | null {
     redisClient = new Redis({
       url,
       token,
+      automaticDeserialization: false,
       retry: { retries: 1, backoff: () => 0 },
       signal: () => AbortSignal.timeout(REDIS_REQUEST_TIMEOUT_MS),
     });

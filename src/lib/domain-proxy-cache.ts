@@ -1,7 +1,7 @@
 import {
   domainCacheKey,
   getRedisClient,
-  readDomainCacheGeneration,
+  readDomainCacheGenerationAndValue,
   setDomainCacheIfGenerationMatches,
 } from "@/lib/redis";
 import { normalizeStoredCustomDomain } from "@/lib/utils/domain";
@@ -18,13 +18,14 @@ export async function readCachedDomainUsername(
   }
 
   try {
-    const cached = await redis.get<string>(domainCacheKey(domainKey));
+    const cached = await redis.get(domainCacheKey(domainKey));
 
-    if (cached === null) {
+    if (cached === null || cached === undefined) {
       return undefined;
     }
 
-    return cached === "" ? null : cached;
+    const normalized = String(cached);
+    return normalized === "" ? null : normalized;
   } catch {
     return undefined;
   }
@@ -66,16 +67,15 @@ export async function lookupDomainUsernameWithGenerationGuard(
 
   const redis = getRedisClient();
   let generationAtStart = "0";
+  let cached: string | null | undefined;
 
   if (redis) {
-    try {
-      generationAtStart = await readDomainCacheGeneration(redis, domainKey);
-    } catch {
-      generationAtStart = "0";
-    }
+    const state = await readDomainCacheGenerationAndValue(redis, domainKey);
+    generationAtStart = state.generation;
+    cached = state.cachedUsername;
+  } else {
+    cached = await readCachedDomainUsername(domainKey);
   }
-
-  const cached = await readCachedDomainUsername(domainKey);
 
   if (cached !== undefined) {
     return cached;
@@ -99,7 +99,10 @@ export async function lookupDomainUsernameWithGenerationGuard(
     return null;
   }
 
-  const username = payload.username ? payload.username.toLowerCase() : null;
+  const username =
+    typeof payload.username === "string" && payload.username.length > 0
+      ? payload.username.toLowerCase()
+      : null;
   await writeCachedDomainUsername(domainKey, generationAtStart, username);
 
   return username;
