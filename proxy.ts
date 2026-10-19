@@ -1,5 +1,6 @@
-import { Redis } from "@upstash/redis";
 import { type NextRequest, NextResponse } from "next/server";
+import { domainCacheKey, getRedisClient } from "./src/lib/redis";
+import { normalizeStoredCustomDomain } from "./src/lib/utils/domain";
 
 const DOMAIN_CACHE_TTL_SECONDS = 300;
 
@@ -41,23 +42,18 @@ function isPrimaryHost(hostname: string): boolean {
   }
 }
 
-function getRedis(): Redis | null {
-  const url = process.env.UPSTASH_REDIS_REST_URL;
-  const token = process.env.UPSTASH_REDIS_REST_TOKEN;
+async function lookupDomainUsername(
+  hostname: string,
+  requestUrl: string,
+): Promise<string | null> {
+  const domainKey = normalizeStoredCustomDomain(hostname);
 
-  if (!url || !token) {
+  if (!domainKey) {
     return null;
   }
 
-  return new Redis({ url, token });
-}
-
-async function lookupDomainUsername(
-  domain: string,
-  requestUrl: string,
-): Promise<string | null> {
-  const redis = getRedis();
-  const cacheKey = `domain:${domain}`;
+  const redis = getRedisClient();
+  const cacheKey = domainCacheKey(domainKey);
 
   if (redis) {
     try {
@@ -71,7 +67,7 @@ async function lookupDomainUsername(
   }
 
   const lookupUrl = new URL(
-    `/api/internal/domain-lookup?domain=${encodeURIComponent(domain)}`,
+    `/api/internal/domain-lookup?domain=${encodeURIComponent(domainKey)}`,
     requestUrl,
   );
 
@@ -80,7 +76,7 @@ async function lookupDomainUsername(
   });
 
   if (!lookup.ok) {
-    if (redis) {
+    if (lookup.status === 404 && redis) {
       try {
         await redis.set(cacheKey, "", { ex: DOMAIN_CACHE_TTL_SECONDS });
       } catch {
@@ -90,7 +86,13 @@ async function lookupDomainUsername(
     return null;
   }
 
-  const payload = (await lookup.json()) as { username?: string };
+  let payload: { username?: string };
+  try {
+    payload = (await lookup.json()) as { username?: string };
+  } catch {
+    return null;
+  }
+
   const username = payload.username ? payload.username.toLowerCase() : null;
 
   if (redis) {

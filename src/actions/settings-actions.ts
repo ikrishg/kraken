@@ -6,8 +6,11 @@ import { redirect, unstable_rethrow } from "next/navigation";
 import { publications, user } from "@/db/schema";
 import { useOnboarded } from "@/hooks/onboarded";
 import { db } from "@/lib/db";
-<<<<<<< HEAD
 import { isUniqueViolation } from "@/lib/db-errors";
+import {
+  invalidateDomainCache,
+  invalidateDomainCacheIf,
+} from "@/lib/redis";
 import { executeCustomDomainAdd } from "@/lib/settings/custom-domain-add";
 import {
   canStartDomainClaim,
@@ -16,11 +19,7 @@ import {
 import { removeCustomDomainIfOwned } from "@/lib/settings/custom-domain-security";
 import { canVerifyStoredDomain } from "@/lib/settings/custom-domain-verify";
 import { parseCustomDomainInput } from "@/lib/utils/domain";
-=======
-import { getRedisClient } from "@/lib/redis";
-import { normalizeDomain } from "@/lib/utils/domain";
 import { publicationUrl } from "@/lib/utils/routes";
->>>>>>> 9c1cfcf (feat: routes utility, page metadata, docs refresh, and route tests)
 import {
   addProjectDomain,
   removeProjectDomain,
@@ -187,6 +186,7 @@ export async function addCustomDomain(formData: FormData) {
           domainKey: conflict.customDomainKey || "",
         }
       : null,
+    invalidateDomainCache,
     claimInDatabase: async (claim) => {
       if (
         !canStartDomainClaim(
@@ -302,7 +302,7 @@ export async function addCustomDomain(formData: FormData) {
   }
 
   if (outcome.status === "verified" || outcome.status === "pending") {
-    await db
+    const updated = await db
       .update(publications)
       .set({
         customDomainVerified: outcome.status === "verified",
@@ -314,7 +314,15 @@ export async function addCustomDomain(formData: FormData) {
           eq(publications.customDomainKey, outcome.claim.domainKey),
           eq(publications.customDomain, outcome.claim.vercelHostname),
         ),
-      );
+      )
+      .returning({ id: publications.id });
+
+    if (updated.length > 0) {
+      await invalidateDomainCache(outcome.claim.domainKey);
+      if (current.domainKey && current.domainKey !== outcome.claim.domainKey) {
+        await invalidateDomainCache(current.domainKey);
+      }
+    }
   }
 
   revalidatePath("/settings");
@@ -376,6 +384,8 @@ export async function verifyCustomDomain(formData: FormData) {
     toSettingsRedirect("domain-forbidden");
   }
 
+  await invalidateDomainCacheIf(updated.length > 0, ownedDomainKey);
+
   revalidatePath("/settings");
   toSettingsRedirect(
     result.verified ? "domain-verified" : "domain-pending-verification",
@@ -436,6 +446,8 @@ export async function removeCustomDomain(formData: FormData) {
   if (updated.length === 0) {
     toSettingsRedirect("domain-forbidden");
   }
+
+  await invalidateDomainCacheIf(updated.length > 0, outcome.domainKey);
 
   revalidatePath("/settings");
   toSettingsRedirect("domain-removed");

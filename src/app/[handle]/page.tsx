@@ -69,7 +69,9 @@ export async function generateMetadata({
   const title = record.publicationName || record.userName || `~${username}`;
   const appUrl =
     process.env.NEXT_PUBLIC_APP_URL || process.env.BETTER_AUTH_URL || "";
-  const canonical = appUrl ? `${appUrl}/~${username}` : undefined;
+  const canonical = appUrl
+    ? new URL(publicationUrl(username), appUrl).href
+    : undefined;
 
   return {
     title: `${title} — Kraken`,

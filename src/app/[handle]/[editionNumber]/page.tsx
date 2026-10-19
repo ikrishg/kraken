@@ -7,6 +7,7 @@ import { getSession } from "@/hooks/session";
 import { db } from "@/lib/db";
 import { isViewerSubscribedToPublication } from "@/lib/queries/subscriptions";
 import { getIssueByEditionNumber } from "@/lib/queries/updates";
+import { issueUrl } from "@/lib/utils/routes";
 
 export const dynamic = "force-dynamic";
 
@@ -49,7 +50,7 @@ export async function generateMetadata({
   const appUrl =
     process.env.NEXT_PUBLIC_APP_URL || process.env.BETTER_AUTH_URL || "";
   const canonical = appUrl
-    ? `${appUrl}/~${username}/${parsedEditionNumber}`
+    ? new URL(issueUrl(username, parsedEditionNumber), appUrl).href
     : undefined;
 
   return {
