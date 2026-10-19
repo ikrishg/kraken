@@ -1,6 +1,6 @@
 "use server";
 
-import { and, eq, ne } from "drizzle-orm";
+import { and, eq, isNull, ne, or } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { publications, user } from "@/db/schema";
@@ -8,9 +8,10 @@ import { useOnboarded } from "@/hooks/onboarded";
 import { db } from "@/lib/db";
 import { isUniqueViolation } from "@/lib/db-errors";
 import { executeCustomDomainAdd } from "@/lib/settings/custom-domain-add";
+import { canStartDomainClaim } from "@/lib/settings/custom-domain-restore";
 import { removeCustomDomainIfOwned } from "@/lib/settings/custom-domain-security";
 import { canVerifyStoredDomain } from "@/lib/settings/custom-domain-verify";
-import { normalizeStoredCustomDomain } from "@/lib/utils/domain";
+import { parseCustomDomainInput } from "@/lib/utils/domain";
 import {
   addProjectDomain,
   removeProjectDomain,
@@ -41,6 +42,7 @@ async function getUserPublication(userId: string) {
     .select({
       id: publications.id,
       customDomain: publications.customDomain,
+      customDomainKey: publications.customDomainKey,
       customDomainVerified: publications.customDomainVerified,
     })
     .from(publications)
@@ -73,19 +75,19 @@ async function ensurePublication(userId: string, fallbackName: string) {
 }
 
 async function findConflictingDomainOwner(
-  bareDomain: string,
+  domainKey: string,
   excludeUserId: string,
 ) {
   return db
     .select({
       id: publications.id,
       userId: publications.userId,
-      customDomain: publications.customDomain,
+      customDomainKey: publications.customDomainKey,
     })
     .from(publications)
     .where(
       and(
-        eq(publications.customDomain, bareDomain),
+        eq(publications.customDomainKey, domainKey),
         ne(publications.userId, excludeUserId),
       ),
     )
@@ -138,10 +140,10 @@ export async function updatePublicationTitle(formData: FormData) {
 export async function addCustomDomain(formData: FormData) {
   const session = await useOnboarded();
   const rawDomain = formData.get("customDomain");
-  const bareDomain =
-    typeof rawDomain === "string" ? normalizeStoredCustomDomain(rawDomain) : "";
+  const parsed =
+    typeof rawDomain === "string" ? parseCustomDomainInput(rawDomain) : null;
 
-  if (!bareDomain) {
+  if (!parsed) {
     toSettingsRedirect("invalid-domain");
   }
 
@@ -151,36 +153,62 @@ export async function addCustomDomain(formData: FormData) {
   );
 
   const existingPublication = await getUserPublication(session.user.id);
-  const previousDomain = existingPublication?.customDomain ?? null;
-  const previousVerified = existingPublication?.customDomainVerified ?? false;
+  const current = {
+    vercelHostname: existingPublication?.customDomain ?? null,
+    domainKey: existingPublication?.customDomainKey ?? null,
+    verified: existingPublication?.customDomainVerified ?? false,
+  };
 
   const conflict = await findConflictingDomainOwner(
-    bareDomain,
+    parsed.domainKey,
     session.user.id,
   );
 
   const outcome = await executeCustomDomainAdd({
     requestedDomain: rawDomain as string,
-    currentDomain: previousDomain,
+    current,
     currentUserId: session.user.id,
     conflictOwner: conflict
       ? {
           userId: conflict.userId,
-          bareDomain: normalizeStoredCustomDomain(conflict.customDomain || ""),
+          domainKey: conflict.customDomainKey || "",
         }
       : null,
-    removeFromVercel: removeProjectDomain,
-    addToVercel: addProjectDomain,
-    claimInDatabase: async (nextDomain) => {
+    claimInDatabase: async (claim) => {
+      if (
+        !canStartDomainClaim(
+          current.domainKey,
+          current.verified,
+          claim.domainKey,
+        )
+      ) {
+        return "blocked";
+      }
+
       try {
-        await db
+        const updated = await db
           .update(publications)
           .set({
-            customDomain: nextDomain,
+            customDomain: claim.vercelHostname,
+            customDomainKey: claim.domainKey,
             customDomainVerified: false,
             updatedAt: new Date(),
           })
-          .where(eq(publications.id, publication.id));
+          .where(
+            and(
+              eq(publications.id, publication.id),
+              or(
+                isNull(publications.customDomainKey),
+                eq(publications.customDomainKey, claim.domainKey),
+                eq(publications.customDomainVerified, true),
+              ),
+            ),
+          )
+          .returning({ id: publications.id });
+
+        if (updated.length === 0) {
+          return "blocked";
+        }
 
         return "claimed";
       } catch (error) {
@@ -191,15 +219,29 @@ export async function addCustomDomain(formData: FormData) {
         throw error;
       }
     },
-    restoreDatabase: async (restoredDomain) => {
-      await db
+    rollbackClaim: async (claim, previous) => {
+      const updated = await db
         .update(publications)
         .set({
-          customDomain: restoredDomain,
-          customDomainVerified: restoredDomain ? previousVerified : false,
+          customDomain: previous.vercelHostname,
+          customDomainKey: previous.domainKey,
+          customDomainVerified: previous.verified,
           updatedAt: new Date(),
         })
-        .where(eq(publications.id, publication.id));
+        .where(
+          and(
+            eq(publications.id, publication.id),
+            eq(publications.customDomainKey, claim.domainKey),
+          ),
+        )
+        .returning({ id: publications.id });
+
+      return updated.length > 0;
+    },
+    addToVercel: addProjectDomain,
+    removePreviousFromVercel: removeProjectDomain,
+    logWarning: (message) => {
+      console.warn(message);
     },
   });
 
@@ -215,17 +257,16 @@ export async function addCustomDomain(formData: FormData) {
     toSettingsRedirect("domain-in-use");
   }
 
-  if (outcome.status === "remove-previous-failed") {
-    toSettingsRedirect(
-      "domain-add-failed",
-      "Could not remove your previous domain from Vercel. Nothing was changed.",
-    );
+  if (outcome.status === "change-in-progress") {
+    toSettingsRedirect("domain-change-in-progress");
   }
 
   if (outcome.status === "add-failed") {
     toSettingsRedirect(
       "domain-add-failed",
-      "Could not add the domain on Vercel. Your previous domain was restored.",
+      outcome.rolledBack
+        ? "Could not add the domain on Vercel. Your publication record was rolled back to the previous saved domain. Your previous Vercel registration was left in place."
+        : "Could not add the domain on Vercel, and the pending claim was already replaced by a newer domain change.",
     );
   }
 
@@ -239,7 +280,8 @@ export async function addCustomDomain(formData: FormData) {
       .where(
         and(
           eq(publications.id, publication.id),
-          eq(publications.customDomain, outcome.bareDomain),
+          eq(publications.customDomainKey, outcome.claim.domainKey),
+          eq(publications.customDomain, outcome.claim.vercelHostname),
         ),
       );
   }
@@ -255,38 +297,40 @@ export async function addCustomDomain(formData: FormData) {
 export async function verifyCustomDomain(formData: FormData) {
   const session = await useOnboarded();
   const rawDomain = formData.get("customDomain");
-  const domain =
-    typeof rawDomain === "string" ? normalizeStoredCustomDomain(rawDomain) : "";
+  const parsed =
+    typeof rawDomain === "string" ? parseCustomDomainInput(rawDomain) : null;
 
-  if (!domain) {
+  if (!parsed) {
     toSettingsRedirect("invalid-domain");
   }
 
   const publication = await getUserPublication(session.user.id);
 
-  if (!canVerifyStoredDomain(publication?.customDomain, domain)) {
+  if (!canVerifyStoredDomain(publication?.customDomainKey, parsed.domainKey)) {
     toSettingsRedirect("domain-forbidden");
   }
 
-  const ownedDomain = publication?.customDomain;
-  if (!ownedDomain) {
+  const ownedVercelHostname = publication?.customDomain;
+  const ownedDomainKey = publication?.customDomainKey;
+
+  if (!ownedVercelHostname || !ownedDomainKey) {
     toSettingsRedirect("domain-forbidden");
   }
 
   try {
-    const result = await verifyProjectDomain(ownedDomain);
+    const result = await verifyProjectDomain(ownedVercelHostname);
 
     const updated = await db
       .update(publications)
       .set({
-        customDomain: ownedDomain,
         customDomainVerified: result.verified,
         updatedAt: new Date(),
       })
       .where(
         and(
           eq(publications.id, publication.id),
-          eq(publications.customDomain, ownedDomain),
+          eq(publications.customDomain, ownedVercelHostname),
+          eq(publications.customDomainKey, ownedDomainKey),
         ),
       )
       .returning({ id: publications.id });
@@ -308,18 +352,19 @@ export async function verifyCustomDomain(formData: FormData) {
 export async function removeCustomDomain(formData: FormData) {
   const session = await useOnboarded();
   const rawDomain = formData.get("customDomain");
-  const domain =
-    typeof rawDomain === "string" ? normalizeStoredCustomDomain(rawDomain) : "";
+  const parsed =
+    typeof rawDomain === "string" ? parseCustomDomainInput(rawDomain) : null;
 
-  if (!domain) {
+  if (!parsed) {
     toSettingsRedirect("invalid-domain");
   }
 
   const publication = await getUserPublication(session.user.id);
 
   const outcome = await removeCustomDomainIfOwned({
-    requestedDomain: domain,
-    storedDomain: publication?.customDomain,
+    requestedDomain: parsed.domainKey,
+    storedVercelHostname: publication?.customDomain,
+    storedDomainKey: publication?.customDomainKey,
     removeFromVercel: removeProjectDomain,
   });
 
@@ -331,19 +376,19 @@ export async function removeCustomDomain(formData: FormData) {
     toSettingsRedirect("invalid-domain");
   }
 
-  const ownedDomain = outcome.ownedDomain;
-
   const updated = await db
     .update(publications)
     .set({
       customDomain: null,
+      customDomainKey: null,
       customDomainVerified: false,
       updatedAt: new Date(),
     })
     .where(
       and(
         eq(publications.id, publication.id),
-        eq(publications.customDomain, ownedDomain),
+        eq(publications.customDomain, outcome.vercelHostname),
+        eq(publications.customDomainKey, outcome.domainKey),
       ),
     )
     .returning({ id: publications.id });

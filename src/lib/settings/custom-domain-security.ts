@@ -6,43 +6,53 @@ import {
 export type RemoveCustomDomainOutcome =
   | { status: "invalid" }
   | { status: "forbidden" }
-  | { status: "removed"; ownedDomain: string };
+  | { status: "removed"; vercelHostname: string; domainKey: string };
 
 export async function removeCustomDomainIfOwned(params: {
   requestedDomain: string;
-  storedDomain: string | null | undefined;
-  removeFromVercel: (domain: string) => Promise<void>;
+  storedVercelHostname: string | null | undefined;
+  storedDomainKey: string | null | undefined;
+  removeFromVercel: (vercelHostname: string) => Promise<void>;
 }): Promise<RemoveCustomDomainOutcome> {
-  const domain = normalizeStoredCustomDomain(params.requestedDomain);
+  const domainKey = normalizeStoredCustomDomain(params.requestedDomain);
 
-  if (!domain) {
+  if (!domainKey) {
     return { status: "invalid" };
   }
 
-  const storedDomain = params.storedDomain ?? null;
+  const storedDomainKey = params.storedDomainKey ?? null;
+  const storedVercelHostname = params.storedVercelHostname ?? null;
 
-  if (!storedDomain || !domainsReferToSameHost(storedDomain, domain)) {
+  if (
+    !storedDomainKey ||
+    !storedVercelHostname ||
+    !domainsReferToSameHost(storedDomainKey, domainKey)
+  ) {
     return { status: "forbidden" };
   }
 
   try {
-    await params.removeFromVercel(storedDomain);
+    await params.removeFromVercel(storedVercelHostname);
   } catch {
     // Continue local cleanup even if Vercel API already removed the domain.
   }
 
-  return { status: "removed", ownedDomain: storedDomain };
+  return {
+    status: "removed",
+    vercelHostname: storedVercelHostname,
+    domainKey: storedDomainKey,
+  };
 }
 
 export function callerOwnsStoredDomain(
-  storedDomain: string | null | undefined,
+  storedDomainKey: string | null | undefined,
   requestedDomain: string,
 ): boolean {
-  const domain = normalizeStoredCustomDomain(requestedDomain);
+  const domainKey = normalizeStoredCustomDomain(requestedDomain);
 
-  if (!domain || !storedDomain) {
+  if (!domainKey || !storedDomainKey) {
     return false;
   }
 
-  return domainsReferToSameHost(storedDomain, domain);
+  return domainsReferToSameHost(storedDomainKey, domainKey);
 }

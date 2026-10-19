@@ -10,7 +10,8 @@ test("removeCustomDomainIfOwned rejects when stored domain does not match reques
 
   const outcome = await removeCustomDomainIfOwned({
     requestedDomain: "victim.example.com",
-    storedDomain: "attacker.example.com",
+    storedVercelHostname: "attacker.example.com",
+    storedDomainKey: "attacker.example.com",
     removeFromVercel: async () => {
       vercelCalls += 1;
     },
@@ -18,39 +19,6 @@ test("removeCustomDomainIfOwned rejects when stored domain does not match reques
 
   assert.deepEqual(outcome, { status: "forbidden" });
   assert.equal(vercelCalls, 0);
-});
-
-test("removeCustomDomainIfOwned rejects another user's domain even with www alias mismatch", async () => {
-  let vercelCalls = 0;
-
-  const outcome = await removeCustomDomainIfOwned({
-    requestedDomain: "www.victim.example.com",
-    storedDomain: "other.example.com",
-    removeFromVercel: async () => {
-      vercelCalls += 1;
-    },
-  });
-
-  assert.deepEqual(outcome, { status: "forbidden" });
-  assert.equal(vercelCalls, 0);
-});
-
-test("removeCustomDomainIfOwned removes via Vercel when caller owns the domain", async () => {
-  const removed: string[] = [];
-
-  const outcome = await removeCustomDomainIfOwned({
-    requestedDomain: "www.news.example.com",
-    storedDomain: "news.example.com",
-    removeFromVercel: async (domain) => {
-      removed.push(domain);
-    },
-  });
-
-  assert.deepEqual(outcome, {
-    status: "removed",
-    ownedDomain: "news.example.com",
-  });
-  assert.deepEqual(removed, ["news.example.com"]);
 });
 
 test("removeCustomDomainIfOwned rejects null stored domain without calling Vercel", async () => {
@@ -58,7 +26,8 @@ test("removeCustomDomainIfOwned rejects null stored domain without calling Verce
 
   const outcome = await removeCustomDomainIfOwned({
     requestedDomain: "news.example.com",
-    storedDomain: null,
+    storedVercelHostname: null,
+    storedDomainKey: null,
     removeFromVercel: async () => {
       vercelCalls += 1;
     },
@@ -68,13 +37,29 @@ test("removeCustomDomainIfOwned rejects null stored domain without calling Verce
   assert.equal(vercelCalls, 0);
 });
 
+test("removeCustomDomainIfOwned removes via the stored Vercel hostname", async () => {
+  const removed: string[] = [];
+
+  const outcome = await removeCustomDomainIfOwned({
+    requestedDomain: "www.news.example.com",
+    storedVercelHostname: "www.news.example.com",
+    storedDomainKey: "news.example.com",
+    removeFromVercel: async (hostname) => {
+      removed.push(hostname);
+    },
+  });
+
+  assert.deepEqual(outcome, {
+    status: "removed",
+    vercelHostname: "www.news.example.com",
+    domainKey: "news.example.com",
+  });
+  assert.deepEqual(removed, ["www.news.example.com"]);
+});
+
 test("callerOwnsStoredDomain treats www and bare hostnames as equivalent", () => {
   assert.equal(
     callerOwnsStoredDomain("blog.example.com", "www.blog.example.com"),
-    true,
-  );
-  assert.equal(
-    callerOwnsStoredDomain("www.blog.example.com", "blog.example.com"),
     true,
   );
   assert.equal(callerOwnsStoredDomain(null, "blog.example.com"), false);

@@ -2,19 +2,20 @@ import { and, eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { publications, user } from "@/db/schema";
 import { db } from "@/lib/db";
+import { normalizeStoredCustomDomain } from "@/lib/utils/domain";
 
 function normalizeLookupDomain(domain: string): string {
-  return domain.trim().toLowerCase().replace(/\.$/, "");
+  return normalizeStoredCustomDomain(domain);
 }
 
-async function findDomainOwner(domain: string) {
+async function findDomainOwner(domainKey: string) {
   return db
     .select({ username: user.username })
     .from(publications)
     .innerJoin(user, eq(publications.userId, user.id))
     .where(
       and(
-        eq(publications.customDomain, domain),
+        eq(publications.customDomainKey, domainKey),
         eq(publications.customDomainVerified, true),
       ),
     )
@@ -29,17 +30,13 @@ export async function GET(request: Request) {
 
   const { searchParams } = new URL(request.url);
   const domainValue = searchParams.get("domain");
-  const domain = domainValue ? normalizeLookupDomain(domainValue) : null;
+  const domainKey = domainValue ? normalizeLookupDomain(domainValue) : null;
 
-  if (!domain) {
+  if (!domainKey) {
     return NextResponse.json({ error: "domain-required" }, { status: 400 });
   }
 
-  let match = await findDomainOwner(domain);
-
-  if (!match && domain.startsWith("www.")) {
-    match = await findDomainOwner(domain.slice(4));
-  }
+  const match = await findDomainOwner(domainKey);
 
   if (!match?.username) {
     return NextResponse.json({ error: "not-found" }, { status: 404 });
