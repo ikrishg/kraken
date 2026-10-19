@@ -2,10 +2,12 @@ import {
   domainsReferToSameHost,
   normalizeStoredCustomDomain,
 } from "@/lib/utils/domain";
+import { isVercelDomainNotFoundOnRemove } from "@/lib/vercel-domains";
 
 export type RemoveCustomDomainOutcome =
   | { status: "invalid" }
   | { status: "forbidden" }
+  | { status: "vercel-failed" }
   | { status: "removed"; vercelHostname: string; domainKey: string };
 
 export async function removeCustomDomainIfOwned(params: {
@@ -33,8 +35,10 @@ export async function removeCustomDomainIfOwned(params: {
 
   try {
     await params.removeFromVercel(storedVercelHostname);
-  } catch {
-    // Continue local cleanup even if Vercel API already removed the domain.
+  } catch (error) {
+    if (!isVercelDomainNotFoundOnRemove(error)) {
+      return { status: "vercel-failed" };
+    }
   }
 
   return {

@@ -102,8 +102,7 @@ export async function executeCustomDomainAdd(params: {
 
     if (
       previous.vercelHostname &&
-      previous.domainKey &&
-      previous.domainKey !== claim.domainKey
+      previous.vercelHostname !== claim.vercelHostname
     ) {
       try {
         await params.removePreviousFromVercel(previous.vercelHostname);

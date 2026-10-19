@@ -57,6 +57,38 @@ test("removeCustomDomainIfOwned removes via the stored Vercel hostname", async (
   assert.deepEqual(removed, ["www.news.example.com"]);
 });
 
+test("removeCustomDomainIfOwned keeps the row when Vercel returns a server error", async () => {
+  const outcome = await removeCustomDomainIfOwned({
+    requestedDomain: "news.example.com",
+    storedVercelHostname: "news.example.com",
+    storedDomainKey: "news.example.com",
+    removeFromVercel: async () => {
+      throw new Error("Vercel remove failed (500): upstream error");
+    },
+  });
+
+  assert.deepEqual(outcome, { status: "vercel-failed" });
+});
+
+test("removeCustomDomainIfOwned clears locally when Vercel reports the domain is already gone", async () => {
+  const outcome = await removeCustomDomainIfOwned({
+    requestedDomain: "news.example.com",
+    storedVercelHostname: "news.example.com",
+    storedDomainKey: "news.example.com",
+    removeFromVercel: async () => {
+      throw new Error(
+        "Vercel remove failed (404, not_found): Domain not found",
+      );
+    },
+  });
+
+  assert.deepEqual(outcome, {
+    status: "removed",
+    vercelHostname: "news.example.com",
+    domainKey: "news.example.com",
+  });
+});
+
 test("callerOwnsStoredDomain treats www and bare hostnames as equivalent", () => {
   assert.equal(
     callerOwnsStoredDomain("blog.example.com", "www.blog.example.com"),

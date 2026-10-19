@@ -152,6 +152,40 @@ test("executeCustomDomainAdd does not remove the previous domain before a succes
   assert.deepEqual(calls, []);
 });
 
+test("executeCustomDomainAdd removes the previous Vercel host when switching apex to www on the same key", async () => {
+  const calls: string[] = [];
+
+  const outcome = await executeCustomDomainAdd({
+    requestedDomain: "www.news.example.com",
+    current: {
+      vercelHostname: "news.example.com",
+      domainKey: "news.example.com",
+      verified: true,
+    },
+    currentUserId: "user-a",
+    conflictOwner: null,
+    claimInDatabase: async (claim) => {
+      calls.push(`claim:${claim.vercelHostname}`);
+      return "claimed";
+    },
+    addToVercel: async (hostname) => {
+      calls.push(`add:${hostname}`);
+      return { verified: false };
+    },
+    rollbackClaim: async () => true,
+    removePreviousFromVercel: async (hostname) => {
+      calls.push(`remove:${hostname}`);
+    },
+  });
+
+  assert.equal(outcome.status, "pending");
+  assert.deepEqual(calls, [
+    "claim:www.news.example.com",
+    "add:www.news.example.com",
+    "remove:news.example.com",
+  ]);
+});
+
 test("executeCustomDomainAdd re-adds the same domain through claim and Vercel", async () => {
   const calls: string[] = [];
 
