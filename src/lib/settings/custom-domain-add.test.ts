@@ -400,7 +400,7 @@ test("executeCustomDomainAdd skips rollback invalidation when rollback does not 
   });
 
   assert.deepEqual(outcome, { status: "add-failed", rolledBack: false });
-  assert.deepEqual(invalidated, ["new.example.com", "new.example.com"]);
+  assert.deepEqual(invalidated, ["new.example.com"]);
 });
 
 test("executeCustomDomainAdd blocks overlapping changes while verification is pending", async () => {
