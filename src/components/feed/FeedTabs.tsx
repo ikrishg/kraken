@@ -1,8 +1,8 @@
 "use client";
 
+import { Tabs } from "@base-ui/react/tabs";
 import Image from "next/image";
 import Link from "next/link";
-import { useState } from "react";
 import type { Article } from "@/components/editorial";
 import {
   ArticleCard,
@@ -29,40 +29,42 @@ const TAB_LABELS: { id: FeedTab; label: string }[] = [
   { id: "likes", label: "Likes" },
 ];
 
+const tabButtonClass = ({ active }: { active: boolean }) =>
+  `px-5 py-3 text-meta tracking-wider uppercase transition-colors ${
+    active
+      ? "border-b-2 border-paper-ink text-paper-ink font-medium -mb-px"
+      : "text-paper-muted hover:text-paper-ink"
+  }`;
+
 export function FeedTabs({
   articles,
   follows,
   subscriptions,
   likedArticles,
 }: FeedTabsProps) {
-  const [activeTab, setActiveTab] = useState<FeedTab>("articles");
-
   return (
-    <div>
-      <div className="flex border-b border-paper-border mb-8">
+    <Tabs.Root defaultValue="articles">
+      <Tabs.List className="flex border-b border-paper-border mb-8">
         {TAB_LABELS.map((tab) => (
-          <button
-            key={tab.id}
-            type="button"
-            onClick={() => setActiveTab(tab.id)}
-            className={`px-5 py-3 text-meta tracking-wider uppercase transition-colors ${
-              activeTab === tab.id
-                ? "border-b-2 border-paper-ink text-paper-ink font-medium -mb-px"
-                : "text-paper-muted hover:text-paper-ink"
-            }`}
-          >
+          <Tabs.Tab key={tab.id} value={tab.id} className={tabButtonClass}>
             {tab.label}
-          </button>
+          </Tabs.Tab>
         ))}
-      </div>
+      </Tabs.List>
 
-      {activeTab === "articles" && <ArticlesTab articles={articles} />}
-      {activeTab === "subscriptions" && (
+      <Tabs.Panel value="articles">
+        <ArticlesTab articles={articles} />
+      </Tabs.Panel>
+      <Tabs.Panel value="subscriptions">
         <SubscriptionsTab subscriptions={subscriptions} />
-      )}
-      {activeTab === "follows" && <FollowsTab follows={follows} />}
-      {activeTab === "likes" && <LikesTab articles={likedArticles} />}
-    </div>
+      </Tabs.Panel>
+      <Tabs.Panel value="follows">
+        <FollowsTab follows={follows} />
+      </Tabs.Panel>
+      <Tabs.Panel value="likes">
+        <LikesTab articles={likedArticles} />
+      </Tabs.Panel>
+    </Tabs.Root>
   );
 }
 
@@ -169,7 +171,7 @@ function SubscriptionsTab({
       <div className="pt-2">
         <Link
           href="/subscriptions"
-          className="text-meta text-paper-muted underline underline-offset-2"
+          className="text-meta text-paper-muted underline-offset-2"
         >
           Manage all subscriptions →
         </Link>
