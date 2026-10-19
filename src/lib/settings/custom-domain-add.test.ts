@@ -11,6 +11,14 @@ const emptyCurrent = {
   verified: false,
 };
 
+function readPublicationAs(
+  vercelHostname: string | null,
+  domainKey: string | null,
+) {
+  return async () =>
+    vercelHostname && domainKey ? { vercelHostname, domainKey } : null;
+}
+
 test("shouldBlockAddForConflict blocks another publication owner", () => {
   assert.equal(
     shouldBlockAddForConflict("news.example.com", "user-a", {
@@ -39,6 +47,7 @@ test("executeCustomDomainAdd returns in-use without touching Vercel", async () =
     },
     rollbackClaim: async () => true,
     removePreviousFromVercel: async () => {},
+    readPublicationDomain: async () => null,
   });
 
   assert.equal(outcome.status, "in-use");
@@ -63,6 +72,7 @@ test("executeCustomDomainAdd treats www aliases as the same ownership key confli
     },
     rollbackClaim: async () => true,
     removePreviousFromVercel: async () => {},
+    readPublicationDomain: async () => null,
   });
 
   assert.equal(outcome.status, "in-use");
@@ -93,6 +103,10 @@ test("executeCustomDomainAdd claims before adding the Vercel hostname", async ()
     removePreviousFromVercel: async (hostname) => {
       calls.push(`remove:${hostname}`);
     },
+    readPublicationDomain: readPublicationAs(
+      "www.new.example.com",
+      "new.example.com",
+    ),
   });
 
   assert.equal(outcome.status, "verified");
@@ -120,6 +134,7 @@ test("executeCustomDomainAdd rolls back after a failed Vercel add", async () => 
       return true;
     },
     removePreviousFromVercel: async () => {},
+    readPublicationDomain: async () => null,
   });
 
   assert.deepEqual(outcome, { status: "add-failed", rolledBack: true });
@@ -146,6 +161,7 @@ test("executeCustomDomainAdd does not remove the previous domain before a succes
     removePreviousFromVercel: async (hostname) => {
       calls.push(hostname);
     },
+    readPublicationDomain: async () => null,
   });
 
   assert.equal(outcome.status, "add-failed");
@@ -176,6 +192,10 @@ test("executeCustomDomainAdd removes the previous Vercel host when switching ape
     removePreviousFromVercel: async (hostname) => {
       calls.push(`remove:${hostname}`);
     },
+    readPublicationDomain: readPublicationAs(
+      "www.news.example.com",
+      "news.example.com",
+    ),
   });
 
   assert.equal(outcome.status, "pending");
@@ -183,6 +203,43 @@ test("executeCustomDomainAdd removes the previous Vercel host when switching ape
     "claim:www.news.example.com",
     "add:www.news.example.com",
     "remove:news.example.com",
+  ]);
+});
+
+test("executeCustomDomainAdd skips previous-host removal when the publication row moved on", async () => {
+  const calls: string[] = [];
+
+  const outcome = await executeCustomDomainAdd({
+    requestedDomain: "www.news.example.com",
+    current: {
+      vercelHostname: "news.example.com",
+      domainKey: "news.example.com",
+      verified: true,
+    },
+    currentUserId: "user-a",
+    conflictOwner: null,
+    claimInDatabase: async (claim) => {
+      calls.push(`claim:${claim.vercelHostname}`);
+      return "claimed";
+    },
+    addToVercel: async (hostname) => {
+      calls.push(`add:${hostname}`);
+      return { verified: false };
+    },
+    rollbackClaim: async () => true,
+    removePreviousFromVercel: async (hostname) => {
+      calls.push(`remove:${hostname}`);
+    },
+    readPublicationDomain: readPublicationAs(
+      "news.example.com",
+      "news.example.com",
+    ),
+  });
+
+  assert.equal(outcome.status, "pending");
+  assert.deepEqual(calls, [
+    "claim:www.news.example.com",
+    "add:www.news.example.com",
   ]);
 });
 
@@ -210,6 +267,10 @@ test("executeCustomDomainAdd re-adds the same domain through claim and Vercel", 
     removePreviousFromVercel: async () => {
       calls.push("remove");
     },
+    readPublicationDomain: readPublicationAs(
+      "www.news.example.com",
+      "news.example.com",
+    ),
   });
 
   assert.equal(outcome.status, "pending");
@@ -238,6 +299,7 @@ test("executeCustomDomainAdd blocks overlapping changes while verification is pe
     addToVercel: async () => ({ verified: true }),
     rollbackClaim: async () => true,
     removePreviousFromVercel: async () => {},
+    readPublicationDomain: async () => null,
   });
 
   assert.equal(outcome.status, "change-in-progress");
