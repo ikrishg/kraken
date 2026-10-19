@@ -131,21 +131,29 @@ export async function executeCustomDomainAdd(params: {
       previous.vercelHostname &&
       previous.vercelHostname !== claim.vercelHostname
     ) {
-      const stored = await params.readPublicationDomain();
+      try {
+        const stored = await params.readPublicationDomain();
 
-      if (
-        stored &&
-        shouldRemovePreviousVercelHost(claim, previous.vercelHostname, stored)
-      ) {
-        try {
-          await params.removePreviousFromVercel(previous.vercelHostname);
-        } catch (error) {
-          const detail =
-            error instanceof Error ? error.message : "unknown Vercel error";
-          params.logWarning?.(
-            `Best-effort removal of previous Vercel domain ${previous.vercelHostname} failed: ${detail}`,
-          );
+        if (
+          stored &&
+          shouldRemovePreviousVercelHost(claim, previous.vercelHostname, stored)
+        ) {
+          try {
+            await params.removePreviousFromVercel(previous.vercelHostname);
+          } catch (error) {
+            const detail =
+              error instanceof Error ? error.message : "unknown Vercel error";
+            params.logWarning?.(
+              `Best-effort removal of previous Vercel domain ${previous.vercelHostname} failed: ${detail}`,
+            );
+          }
         }
+      } catch (error) {
+        const detail =
+          error instanceof Error ? error.message : "unknown database error";
+        params.logWarning?.(
+          `Skipped previous Vercel domain cleanup because publication state could not be read: ${detail}`,
+        );
       }
     }
 

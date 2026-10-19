@@ -206,6 +206,41 @@ test("executeCustomDomainAdd removes the previous Vercel host when switching ape
   ]);
 });
 
+test("executeCustomDomainAdd still succeeds when readPublicationDomain throws after Vercel add", async () => {
+  const calls: string[] = [];
+  let rollbackCalls = 0;
+
+  const outcome = await executeCustomDomainAdd({
+    requestedDomain: "www.news.example.com",
+    current: {
+      vercelHostname: "news.example.com",
+      domainKey: "news.example.com",
+      verified: true,
+    },
+    currentUserId: "user-a",
+    conflictOwner: null,
+    claimInDatabase: async () => "claimed",
+    addToVercel: async (hostname) => {
+      calls.push(`add:${hostname}`);
+      return { verified: true };
+    },
+    rollbackClaim: async () => {
+      rollbackCalls += 1;
+      return true;
+    },
+    removePreviousFromVercel: async (hostname) => {
+      calls.push(`remove:${hostname}`);
+    },
+    readPublicationDomain: async () => {
+      throw new Error("database read failed");
+    },
+  });
+
+  assert.equal(outcome.status, "verified");
+  assert.equal(rollbackCalls, 0);
+  assert.deepEqual(calls, ["add:www.news.example.com"]);
+});
+
 test("executeCustomDomainAdd skips previous-host removal when the publication row moved on", async () => {
   const calls: string[] = [];
 
