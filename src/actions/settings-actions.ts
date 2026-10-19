@@ -1,11 +1,15 @@
 "use server";
 
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray, ne } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
-import { redirect } from "next/navigation";
+import { forbidden, redirect } from "next/navigation";
 import { publications, user } from "@/db/schema";
 import { useOnboarded } from "@/hooks/onboarded";
 import { db } from "@/lib/db";
+import {
+  callerOwnsStoredDomain,
+  removeCustomDomainIfOwned,
+} from "@/lib/settings/custom-domain-security";
 import { normalizeDomain } from "@/lib/utils/domain";
 import {
   addProjectDomain,
@@ -30,6 +34,29 @@ function toSettingsRedirect(status: string, detail?: string | null): never {
   }
 
   redirect(`/settings?${params.toString()}`);
+}
+
+function domainLookupValues(domain: string): string[] {
+  const normalized = normalizeDomain(domain);
+
+  if (!normalized) {
+    return [];
+  }
+
+  const bare = normalized.startsWith("www.") ? normalized.slice(4) : normalized;
+
+  return [...new Set([normalized, bare, `www.${bare}`])];
+}
+
+async function getUserPublication(userId: string) {
+  return db
+    .select({
+      id: publications.id,
+      customDomain: publications.customDomain,
+    })
+    .from(publications)
+    .where(eq(publications.userId, userId))
+    .then((rows) => rows[0]);
 }
 
 async function ensurePublication(userId: string, fallbackName: string) {
@@ -114,6 +141,23 @@ export async function addCustomDomain(formData: FormData) {
     `${session.user.name || session.user.username} Publication`,
   );
 
+  const lookupValues = domainLookupValues(domain);
+
+  const conflictingOwner = await db
+    .select({ id: publications.id })
+    .from(publications)
+    .where(
+      and(
+        inArray(publications.customDomain, lookupValues),
+        ne(publications.userId, session.user.id),
+      ),
+    )
+    .then((rows) => rows[0]);
+
+  if (conflictingOwner) {
+    forbidden();
+  }
+
   try {
     const result = await addProjectDomain(domain);
 
@@ -146,22 +190,28 @@ export async function verifyCustomDomain(formData: FormData) {
     toSettingsRedirect("invalid-domain");
   }
 
+  const publication = await getUserPublication(session.user.id);
+
+  if (!callerOwnsStoredDomain(publication?.customDomain, domain)) {
+    forbidden();
+  }
+
+  const ownedDomain = publication?.customDomain;
+  if (!ownedDomain) {
+    forbidden();
+  }
+
   try {
-    const result = await verifyProjectDomain(domain);
+    const result = await verifyProjectDomain(ownedDomain);
 
     await db
       .update(publications)
       .set({
-        customDomain: domain,
+        customDomain: ownedDomain,
         customDomainVerified: result.verified,
         updatedAt: new Date(),
       })
-      .where(
-        and(
-          eq(publications.userId, session.user.id),
-          eq(publications.customDomain, domain),
-        ),
-      );
+      .where(eq(publications.id, publication.id));
 
     revalidatePath("/settings");
     toSettingsRedirect(
@@ -183,10 +233,20 @@ export async function removeCustomDomain(formData: FormData) {
     toSettingsRedirect("invalid-domain");
   }
 
-  try {
-    await removeProjectDomain(domain);
-  } catch {
-    // Continue local cleanup even if Vercel API already removed the domain.
+  const publication = await getUserPublication(session.user.id);
+
+  const outcome = await removeCustomDomainIfOwned({
+    requestedDomain: domain,
+    storedDomain: publication?.customDomain,
+    removeFromVercel: removeProjectDomain,
+  });
+
+  if (outcome.status === "forbidden") {
+    forbidden();
+  }
+
+  if (outcome.status === "invalid" || !publication) {
+    toSettingsRedirect("invalid-domain");
   }
 
   await db
@@ -196,12 +256,7 @@ export async function removeCustomDomain(formData: FormData) {
       customDomainVerified: false,
       updatedAt: new Date(),
     })
-    .where(
-      and(
-        eq(publications.userId, session.user.id),
-        eq(publications.customDomain, domain),
-      ),
-    );
+    .where(eq(publications.id, publication.id));
 
   revalidatePath("/settings");
   toSettingsRedirect("domain-removed");
