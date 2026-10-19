@@ -8,7 +8,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "biome check",
-    "test": "node --import tsx --test src/lib/utils/domain.test.ts src/lib/utils/subscription.test.ts src/lib/utils/publish-date.test.ts",
+    "test": "node --import tsx --test src/lib/utils/domain.test.ts src/lib/utils/subscription.test.ts src/lib/utils/publish-date.test.ts src/lib/settings/custom-domain-security.test.ts",
     "typecheck": "tsc --noEmit",
     "check": "pnpm lint && pnpm typecheck",
     "verify": "pnpm check && pnpm test && pnpm build",

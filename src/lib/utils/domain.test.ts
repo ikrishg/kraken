@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { normalizeDomain } from "@/lib/utils/domain";
+import { domainsReferToSameHost, normalizeDomain } from "@/lib/utils/domain";
 
 test("normalizeDomain extracts a hostname from user input", () => {
   assert.equal(
@@ -8,6 +8,17 @@ test("normalizeDomain extracts a hostname from user input", () => {
     "news.example.com",
   );
   assert.equal(normalizeDomain("blog.example.com."), "blog.example.com");
+});
+
+test("domainsReferToSameHost matches www and bare hostnames", () => {
+  assert.equal(
+    domainsReferToSameHost("news.example.com", "www.news.example.com"),
+    true,
+  );
+  assert.equal(
+    domainsReferToSameHost("other.example.com", "news.example.com"),
+    false,
+  );
 });
 
 test("normalizeDomain rejects invalid hosts", () => {
