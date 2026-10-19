@@ -120,6 +120,20 @@ export async function verifyProjectDomain(domain: string) {
   };
 }
 
+export function isVercelDomainNotFoundOnRemove(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  const message = error.message;
+
+  if (/\(404\b/.test(message) || /\(410\b/.test(message)) {
+    return true;
+  }
+
+  return /,\s*not_found\)/i.test(message) || /domain_not_found/i.test(message);
+}
+
 export async function removeProjectDomain(domain: string) {
   const { token, projectId, teamId } = getVercelContext();
 

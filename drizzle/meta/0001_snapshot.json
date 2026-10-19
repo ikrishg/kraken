@@ -525,21 +525,6 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
-        },
-        "publications_custom_domain_key_unique": {
-          "name": "publications_custom_domain_key_unique",
-          "columns": [
-            {
-              "expression": "custom_domain_key",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
         }
       },
       "foreignKeys": {},

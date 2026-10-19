@@ -7,4 +7,4 @@ SET "custom_domain_key" = regexp_replace(
 )
 WHERE "custom_domain" IS NOT NULL;--> statement-breakpoint
 ALTER TABLE "publications" DROP CONSTRAINT "publications_custom_domain_unique";--> statement-breakpoint
-CREATE UNIQUE INDEX "publications_custom_domain_key_unique" ON "publications" USING btree ("custom_domain_key");
+ALTER TABLE "publications" ADD CONSTRAINT "publications_custom_domain_key_unique" UNIQUE ("custom_domain_key");

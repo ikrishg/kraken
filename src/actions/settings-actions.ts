@@ -2,13 +2,16 @@
 
 import { and, eq, isNull, ne, or } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
-import { redirect } from "next/navigation";
+import { redirect, unstable_rethrow } from "next/navigation";
 import { publications, user } from "@/db/schema";
 import { useOnboarded } from "@/hooks/onboarded";
 import { db } from "@/lib/db";
 import { isUniqueViolation } from "@/lib/db-errors";
 import { executeCustomDomainAdd } from "@/lib/settings/custom-domain-add";
-import { canStartDomainClaim } from "@/lib/settings/custom-domain-restore";
+import {
+  canStartDomainClaim,
+  shouldRollbackClaim,
+} from "@/lib/settings/custom-domain-restore";
 import { removeCustomDomainIfOwned } from "@/lib/settings/custom-domain-security";
 import { canVerifyStoredDomain } from "@/lib/settings/custom-domain-verify";
 import { parseCustomDomainInput } from "@/lib/utils/domain";
@@ -220,6 +223,12 @@ export async function addCustomDomain(formData: FormData) {
       }
     },
     rollbackClaim: async (claim, previous) => {
+      const latest = await getUserPublication(session.user.id);
+
+      if (!shouldRollbackClaim(claim.domainKey, latest?.customDomainKey)) {
+        return false;
+      }
+
       const updated = await db
         .update(publications)
         .set({
@@ -317,36 +326,38 @@ export async function verifyCustomDomain(formData: FormData) {
     toSettingsRedirect("domain-forbidden");
   }
 
+  let result: Awaited<ReturnType<typeof verifyProjectDomain>>;
+
   try {
-    const result = await verifyProjectDomain(ownedVercelHostname);
-
-    const updated = await db
-      .update(publications)
-      .set({
-        customDomainVerified: result.verified,
-        updatedAt: new Date(),
-      })
-      .where(
-        and(
-          eq(publications.id, publication.id),
-          eq(publications.customDomain, ownedVercelHostname),
-          eq(publications.customDomainKey, ownedDomainKey),
-        ),
-      )
-      .returning({ id: publications.id });
-
-    if (!publication || updated.length === 0) {
-      toSettingsRedirect("domain-forbidden");
-    }
-
-    revalidatePath("/settings");
-    toSettingsRedirect(
-      result.verified ? "domain-verified" : "domain-pending-verification",
-    );
+    result = await verifyProjectDomain(ownedVercelHostname);
   } catch (error) {
-    const detail = getErrorDetail(error);
-    toSettingsRedirect("domain-verify-failed", detail);
+    unstable_rethrow(error);
+    toSettingsRedirect("domain-verify-failed", getErrorDetail(error));
   }
+
+  const updated = await db
+    .update(publications)
+    .set({
+      customDomainVerified: result.verified,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(publications.id, publication.id),
+        eq(publications.customDomain, ownedVercelHostname),
+        eq(publications.customDomainKey, ownedDomainKey),
+      ),
+    )
+    .returning({ id: publications.id });
+
+  if (!publication || updated.length === 0) {
+    toSettingsRedirect("domain-forbidden");
+  }
+
+  revalidatePath("/settings");
+  toSettingsRedirect(
+    result.verified ? "domain-verified" : "domain-pending-verification",
+  );
 }
 
 export async function removeCustomDomain(formData: FormData) {
@@ -370,6 +381,13 @@ export async function removeCustomDomain(formData: FormData) {
 
   if (outcome.status === "forbidden") {
     toSettingsRedirect("domain-forbidden");
+  }
+
+  if (outcome.status === "vercel-failed") {
+    toSettingsRedirect(
+      "domain-remove-failed",
+      "Could not remove the domain on Vercel. Your publication still has this domain saved.",
+    );
   }
 
   if (outcome.status === "invalid" || !publication) {

@@ -29,6 +29,8 @@ const statusCopy: Record<string, string> = {
     "Could not add the domain on Vercel. Nothing was saved locally.",
   "domain-verified": "Domain verified successfully.",
   "domain-removed": "Custom domain removed.",
+  "domain-remove-failed":
+    "Could not remove the domain on Vercel. Your publication still has this domain saved.",
   "domain-verify-failed": "Could not verify domain yet.",
   "invalid-domain": "Please enter a valid domain.",
   "domain-in-use": "That domain is already connected to another publication.",
