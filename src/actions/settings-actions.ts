@@ -7,10 +7,7 @@ import { publications, user } from "@/db/schema";
 import { useOnboarded } from "@/hooks/onboarded";
 import { db } from "@/lib/db";
 import { isUniqueViolation } from "@/lib/db-errors";
-import {
-  invalidateDomainCache,
-  invalidateDomainCacheIf,
-} from "@/lib/redis";
+import { invalidateDomainCache, invalidateDomainCacheIf } from "@/lib/redis";
 import { executeCustomDomainAdd } from "@/lib/settings/custom-domain-add";
 import {
   canStartDomainClaim,
