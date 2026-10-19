@@ -19,6 +19,29 @@ export type AddCustomDomainOutcome =
   | { status: "verified"; claim: CustomDomainClaim }
   | { status: "pending"; claim: CustomDomainClaim };
 
+export function shouldRemovePreviousVercelHost(
+  claim: CustomDomainClaim,
+  previousVercelHostname: string,
+  stored: { vercelHostname: string | null; domainKey: string | null },
+): boolean {
+  if (!stored.vercelHostname || !stored.domainKey) {
+    return false;
+  }
+
+  if (
+    stored.vercelHostname !== claim.vercelHostname ||
+    stored.domainKey !== claim.domainKey
+  ) {
+    return false;
+  }
+
+  if (previousVercelHostname === stored.vercelHostname) {
+    return false;
+  }
+
+  return true;
+}
+
 export function shouldBlockAddForConflict(
   domainKey: string,
   currentUserId: string,
@@ -49,6 +72,10 @@ export async function executeCustomDomainAdd(params: {
     previous: PublicationDomainSnapshot,
   ) => Promise<boolean>;
   removePreviousFromVercel: (vercelHostname: string) => Promise<void>;
+  readPublicationDomain: () => Promise<{
+    vercelHostname: string | null;
+    domainKey: string | null;
+  } | null>;
   logWarning?: (message: string) => void;
 }): Promise<AddCustomDomainOutcome> {
   const parsed = parseCustomDomainInput(params.requestedDomain);
@@ -104,14 +131,21 @@ export async function executeCustomDomainAdd(params: {
       previous.vercelHostname &&
       previous.vercelHostname !== claim.vercelHostname
     ) {
-      try {
-        await params.removePreviousFromVercel(previous.vercelHostname);
-      } catch (error) {
-        const detail =
-          error instanceof Error ? error.message : "unknown Vercel error";
-        params.logWarning?.(
-          `Best-effort removal of previous Vercel domain ${previous.vercelHostname} failed: ${detail}`,
-        );
+      const stored = await params.readPublicationDomain();
+
+      if (
+        stored &&
+        shouldRemovePreviousVercelHost(claim, previous.vercelHostname, stored)
+      ) {
+        try {
+          await params.removePreviousFromVercel(previous.vercelHostname);
+        } catch (error) {
+          const detail =
+            error instanceof Error ? error.message : "unknown Vercel error";
+          params.logWarning?.(
+            `Best-effort removal of previous Vercel domain ${previous.vercelHostname} failed: ${detail}`,
+          );
+        }
       }
     }
 

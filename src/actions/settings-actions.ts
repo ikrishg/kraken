@@ -249,6 +249,18 @@ export async function addCustomDomain(formData: FormData) {
     },
     addToVercel: addProjectDomain,
     removePreviousFromVercel: removeProjectDomain,
+    readPublicationDomain: async () => {
+      const latest = await getUserPublication(session.user.id);
+
+      if (!latest) {
+        return null;
+      }
+
+      return {
+        vercelHostname: latest.customDomain,
+        domainKey: latest.customDomainKey,
+      };
+    },
     logWarning: (message) => {
       console.warn(message);
     },
