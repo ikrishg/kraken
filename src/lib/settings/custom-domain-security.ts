@@ -1,4 +1,7 @@
-import { domainsReferToSameHost, normalizeDomain } from "@/lib/utils/domain";
+import {
+  domainsReferToSameHost,
+  normalizeStoredCustomDomain,
+} from "@/lib/utils/domain";
 
 export type RemoveCustomDomainOutcome =
   | { status: "invalid" }
@@ -10,7 +13,7 @@ export async function removeCustomDomainIfOwned(params: {
   storedDomain: string | null | undefined;
   removeFromVercel: (domain: string) => Promise<void>;
 }): Promise<RemoveCustomDomainOutcome> {
-  const domain = normalizeDomain(params.requestedDomain);
+  const domain = normalizeStoredCustomDomain(params.requestedDomain);
 
   if (!domain) {
     return { status: "invalid" };
@@ -35,7 +38,7 @@ export function callerOwnsStoredDomain(
   storedDomain: string | null | undefined,
   requestedDomain: string,
 ): boolean {
-  const domain = normalizeDomain(requestedDomain);
+  const domain = normalizeStoredCustomDomain(requestedDomain);
 
   if (!domain || !storedDomain) {
     return false;
