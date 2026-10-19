@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { Redis } from "@upstash/redis";
-import { lookupDomainUsernameWithGenerationGuard } from "@/lib/domain-proxy-cache";
+import {
+  lookupDomainUsernameWithGenerationGuard,
+  readCachedDomainUsername,
+} from "@/lib/domain-proxy-cache";
 import {
   domainCacheGenerationKey,
   domainCacheKey,
@@ -12,12 +15,36 @@ import {
   setRedisClientForTests,
 } from "@/lib/redis";
 
+function upstashDeserializeStoredValue(stored: string): unknown {
+  try {
+    return JSON.parse(stored);
+  } catch {
+    return stored;
+  }
+}
+
 class MemoryRedis {
   private readonly values = new Map<string, string>();
 
   async get<T = string>(key: string): Promise<T | null> {
     const value = this.values.get(key);
-    return value === undefined ? null : (value as T);
+    if (value === undefined) {
+      return null;
+    }
+
+    return upstashDeserializeStoredValue(value) as T;
+  }
+
+  async mget<T extends unknown[]>(...keys: string[]): Promise<T> {
+    const results = keys.map((key) => {
+      const value = this.values.get(key);
+      if (value === undefined) {
+        return null;
+      }
+      return upstashDeserializeStoredValue(value);
+    });
+
+    return results as T;
   }
 
   async set(key: string, value: string): Promise<"OK"> {
@@ -36,6 +63,12 @@ class MemoryRedis {
   }
 
   async eval(_script: string, keys: string[], args: string[]): Promise<number> {
+    if (keys.length === 2 && args.length === 0) {
+      await this.incr(keys[0]);
+      await this.del(keys[1]);
+      return 1;
+    }
+
     const current = this.values.get(keys[1]) ?? "0";
 
     if (current !== args[0]) {
@@ -128,7 +161,91 @@ test("invalidateDomainCache increments generation key", async () => {
     await invalidateDomainCache(domainKey);
     await invalidateDomainCache(domainKey);
 
-    assert.equal(await redis.get(domainCacheGenerationKey(domainKey)), "2");
+    assert.equal(await redis.get(domainCacheGenerationKey(domainKey)), 2);
+  } finally {
+    resetRedisClientForTests();
+  }
+});
+
+test("readCachedDomainUsername preserves falsy-looking usernames from Upstash deserialization", async () => {
+  const redis = new MemoryRedis() as unknown as Redis;
+  setRedisClientForTests(redis);
+  try {
+    const domainKey = "news.example.com";
+    const key = domainCacheKey(domainKey);
+
+    await redis.set(key, "0");
+    assert.equal(await readCachedDomainUsername(domainKey), "0");
+
+    await redis.set(key, "false");
+    assert.equal(await readCachedDomainUsername(domainKey), "false");
+
+    await redis.set(key, "123");
+    assert.equal(await readCachedDomainUsername(domainKey), "123");
+  } finally {
+    resetRedisClientForTests();
+  }
+});
+
+test("lookupDomainUsernameWithGenerationGuard returns cached username 0 without refetch", async () => {
+  const redis = new MemoryRedis() as unknown as Redis;
+  setRedisClientForTests(redis);
+  try {
+    const domainKey = "news.example.com";
+    await redis.set(domainCacheKey(domainKey), "0");
+
+    let fetchCalls = 0;
+    const username = await lookupDomainUsernameWithGenerationGuard(
+      domainKey,
+      async () => {
+        fetchCalls += 1;
+        return new Response(JSON.stringify({ username: "ignored" }), {
+          status: 200,
+        });
+      },
+    );
+
+    assert.equal(username, "0");
+    assert.equal(fetchCalls, 0);
+  } finally {
+    resetRedisClientForTests();
+  }
+});
+
+test("readCachedDomainUsername preserves username null when redis returns raw strings", async () => {
+  const rawRedis = {
+    get: async (key: string) =>
+      key === domainCacheKey("news.example.com") ? "null" : null,
+  };
+
+  setRedisClientForTests(rawRedis as never);
+  try {
+    assert.equal(await readCachedDomainUsername("news.example.com"), "null");
+  } finally {
+    resetRedisClientForTests();
+  }
+});
+
+test("lookupDomainUsernameWithGenerationGuard returns cached username false without refetch", async () => {
+  const redis = new MemoryRedis() as unknown as Redis;
+  setRedisClientForTests(redis);
+  try {
+    const domainKey = "news.example.com";
+    await redis.set(domainCacheKey(domainKey), "false");
+
+    let fetchCalls = 0;
+    const username = await lookupDomainUsernameWithGenerationGuard(
+      domainKey,
+      async () => {
+        fetchCalls += 1;
+        return new Response(JSON.stringify({ username: "ignored" }), {
+          status: 200,
+        });
+      },
+    );
+
+    assert.equal(username, "false");
+    assert.equal(fetchCalls, 0);
   } finally {
     resetRedisClientForTests();
   }

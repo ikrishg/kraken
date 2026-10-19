@@ -171,7 +171,7 @@ function SubscriptionsTab({
       <div className="pt-2">
         <Link
           href="/subscriptions"
-          className="text-meta text-paper-muted underline-offset-2"
+          className="text-meta text-paper-muted underline underline-offset-2"
         >
           Manage all subscriptions →
         </Link>

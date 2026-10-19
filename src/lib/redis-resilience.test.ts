@@ -5,6 +5,7 @@ import {
   invalidateDomainCache,
   invalidateDomainCacheIf,
   resetRedisClientForTests,
+  setRedisClientForTests,
 } from "@/lib/redis";
 import { executeCustomDomainAdd } from "@/lib/settings/custom-domain-add";
 import { lookupDomainUsername } from "../../proxy";
@@ -55,6 +56,46 @@ test("executeCustomDomainAdd completes when redis client cannot be created", asy
 
     assert.equal(outcome.status, "verified");
   });
+});
+
+test("invalidateDomainCache resolves when redis eval fails", async () => {
+  const throwingRedis = {
+    eval: async () => {
+      throw new Error("network");
+    },
+  };
+
+  setRedisClientForTests(throwingRedis as never);
+  try {
+    await invalidateDomainCache("news.example.com");
+    await invalidateDomainCacheIf(true, "news.example.com");
+  } finally {
+    resetRedisClientForTests();
+  }
+});
+
+test("proxy lookup resolves when redis get fails", async () => {
+  const throwingRedis = {
+    mget: async () => {
+      throw new Error("timeout");
+    },
+  };
+
+  setRedisClientForTests(throwingRedis as never);
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () =>
+    new Response(JSON.stringify({ username: "alice" }), { status: 200 });
+
+  try {
+    const username = await lookupDomainUsername(
+      "news.example.com",
+      "http://localhost:3000",
+    );
+    assert.equal(username, "alice");
+  } finally {
+    globalThis.fetch = originalFetch;
+    resetRedisClientForTests();
+  }
 });
 
 test("proxy lookup resolves when redis client cannot be created", async () => {
