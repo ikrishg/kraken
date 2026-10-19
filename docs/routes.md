@@ -36,7 +36,7 @@ Use the helpers in `src/lib/utils/routes.ts` (`publicationUrl`, `issueUrl`, `pro
 
 Custom domains are resolved in `proxy.ts`, which:
 
-1. Checks an Upstash Redis cache (key `{VERCEL_ENV}:domain:{domainKey}`, TTL 5 minutes) first.
+1. Checks an Upstash Redis cache (key `{VERCEL_ENV}:domain:{domainKey}`, TTL 5 minutes) first. Invalidation bumps a per-domain generation counter so in-flight lookups cannot repopulate stale entries after verify/remove.
 2. Falls back to `src/app/api/internal/domain-lookup/route.ts` on a cache miss.
 3. Writes the result back to Redis (including an empty string for unknown domains to short-circuit repeat misses).
 
